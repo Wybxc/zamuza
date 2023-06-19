@@ -123,9 +123,23 @@ void run() {
 
         // Interaction
         if (IS_AGENT(left) && IS_AGENT(right)) {
-            if (RULES[left[0]][right[0]]) {
-                RULES[left[0]][right[0]](left, right);
-                continue;
+            size_t a_left = left[0];
+            size_t a_right = right[0];
+
+            if (a_left <= a_right) {
+                if (RULES[a_left][a_right]) {
+                    RULES[a_left][a_right](left, right);
+                    free(left);
+                    free(right);
+                    continue;
+                }
+            } else {
+                if (RULES[a_right][a_left]) {
+                    RULES[a_right][a_left](right, left);
+                    free(left);
+                    free(right);
+                    continue;
+                }
             }
             printf("error: no rule for ");
             print_term(left, 3);
@@ -197,7 +211,7 @@ impl RuntimeBuilder {
         for rule in program.rules {
             self.rule(rule)?;
         }
-        for equation in program.equations {
+        for equation in program.net {
             self.equation(equation)?;
         }
         self.interface(program.interface)
@@ -231,7 +245,7 @@ impl RuntimeBuilder {
     printf("\n[Reductions: %zu, CPU time: %f, R/s: %f]\n", REDUCTIONS, time, reductions_per_second);
     
     return 0;
-            "#
+"#
             ));
 
         let main = self.main.build()?;
@@ -245,7 +259,7 @@ impl RuntimeBuilder {
 {RUNTIME}
 {rules}
 {main}
-        "#
+"#
         ))
     }
 }
@@ -305,7 +319,7 @@ impl GlobalBuilder {
 char* AGENTS[] = {{ {agents_names} }};
 size_t ARITY[] = {{ {agents_arity} }};
 size_t NAME_COUNTER = AGENT_COUNT;
-        "#
+"#
         )
     }
 }
@@ -376,8 +390,8 @@ impl FunctionBuilder {
     pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<String> {
         use ast::*;
         match term {
-            Term::Name(Name(name)) => {
-                let term_name = self.add_or_get_name(&name);
+            Term::Name(name) => {
+                let term_name = self.add_or_get_name(&name.into_name());
                 Ok(term_name)
             }
             Term::Agent(Agent { name, body }) => {
@@ -463,7 +477,7 @@ impl FunctionBuilder {
 {body}
 {after}
 }}
-        "#
+"#
         ))
     }
 }
@@ -477,7 +491,11 @@ struct RulesBuilder {
 impl RulesBuilder {
     pub fn rule(&mut self, global: &mut GlobalBuilder, rule: ast::Rule) -> Result<&mut Self> {
         let ast::Rule {
-            terms: [term1, term2],
+            term_pair:
+                ast::RuleTermPair {
+                    left: term1,
+                    right: term2,
+                },
             equations,
         } = rule;
 
@@ -486,42 +504,32 @@ impl RulesBuilder {
         let mut function = FunctionBuilder::default();
         let a1 = global.add_or_get_agent(&term1.agent, term1.body.len())?;
         let a2 = global.add_or_get_agent(&term2.agent, term2.body.len())?;
-        function
-            .signature(format!(
-                "void rule{id} /* {n1}, {n2} */ (size_t* left, size_t* right)",
-                n1 = term1.agent,
-                n2 = term2.agent
-            ))
-            .before(format!(
-                r#"
-    if (left[0] != {a1}) {{
-        size_t* tmp = left;
-        left = right;
-        right = tmp;
-    }}
-"#
-            ));
 
-        for (i, name) in term1.body.into_iter().enumerate() {
-            function.argument(name.0, format!("(size_t*) left[{j}]", j = i + 1));
+        let (a_left, a_right) = if a1 <= a2 { (a1, a2) } else { (a2, a1) };
+        let (term_left, term_right) = if a1 <= a2 {
+            (term1, term2)
+        } else {
+            (term2, term1)
+        };
+        let name_left = term_left.agent;
+        let name_right = term_right.agent;
+
+        function.signature(format!(
+            "void rule{id} /* {name_left}({a_left}), {name_right}({a_right}) */ (size_t* left, size_t* right)",
+        ));
+
+        for (i, name) in term_left.body.into_iter().enumerate() {
+            function.argument(name.into_name(), format!("(size_t*) left[{j}]", j = i + 1));
         }
-        for (i, name) in term2.body.into_iter().enumerate() {
-            function.argument(name.0, format!("(size_t*) right[{j}]", j = i + 1));
+        for (i, name) in term_right.body.into_iter().enumerate() {
+            function.argument(name.into_name(), format!("(size_t*) right[{j}]", j = i + 1));
         }
 
         for equation in equations {
             function.equation(global, equation)?;
         }
 
-        function.after(
-            r#"
-    free(left);
-    free(right);
-    "#
-            .to_string(),
-        );
-
-        self.rules.push((a1, a2));
+        self.rules.push((a_left, a_right));
         self.functions.push(function.build()?);
 
         Ok(self)
@@ -532,9 +540,7 @@ impl RulesBuilder {
             .rules
             .iter()
             .enumerate()
-            .map(|(id, (a1, a2))| {
-                format!("    RULES[{a1}][{a2}] = rule{id};\n    RULES[{a2}][{a1}] = rule{id};")
-            })
+            .map(|(id, (a1, a2))| format!("    RULES[{a1}][{a2}] = rule{id};"))
             .collect::<Vec<_>>()
             .join("\n");
 

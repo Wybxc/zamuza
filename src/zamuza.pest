@@ -1,19 +1,27 @@
-Program = { SOI ~ (Rule | Equation | Interface)+ ~ EOI }
+Program = { SOI ~ (Rule | NetEquation | Interface)+ ~ EOI }
 
-Rule          = { RuleTerm ~ ":-:" ~ RuleTerm ~ "=>" ~ RuleEquations }
-RuleTerm      = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ ")")? }
-RuleEquations = { "_" | Equation ~ (Comma ~ Equation)* }
+Rule               = { (RuleTermsLeftRight | RuleTermsRightLeft) ~ "=>" ~ RuleEquations }
+RuleTermsLeftRight = { RuleTerm ~ ">>" ~ RuleTerm }
+RuleTermsRightLeft = { RuleTerm ~ "<<" ~ RuleTerm }
+RuleTerm           = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ ")")? }
+RuleEquations      = { "_" | Equation ~ (Comma ~ Equation)* }
 
-Equation = { Term ~ "=" ~ Term }
+NetEquation       = _{ "::" ~ Equation }
+Equation          =  { EquationLeftRight | EquationRightLeft }
+EquationLeftRight =  { Term ~ "->" ~ Term }
+EquationRightLeft =  { Term ~ "<-" ~ Term }
 
 Interface = { "$" ~ "=" ~ Term }
 
-Term  = { Name | Agent ~ ("(" ~ Term ~ (Comma ~ Term)* ~ ")")? }
-Name  = { "#" ~ Ident }
-Agent = { Ident }
+Term    = { Name | Agent ~ ("(" ~ Term ~ (Comma ~ Term)* ~ ")")? }
+Name    = { NameIn | NameOut }
+NameIn  = { "#" ~ Ident }
+NameOut = { "@" ~ Ident }
+Agent   = { Ident }
 
-Ident  = @{ Letter+ }
-Letter =  { LETTER | "_" }
+Ident     = @{ Letter ~ LetterNum* ~ "'"* }
+LetterNum =  { Letter | '0'..'9' }
+Letter    =  { LETTER | "_" }
 
 Comma = _{ "," }
 

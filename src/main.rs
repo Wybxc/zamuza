@@ -1,46 +1,27 @@
 use anyhow::Result;
+use clap::Parser;
+use std::io::{Read, Write};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Source file, or pass "-" to read from stdin
+    #[clap(short, long, value_parser)]
+    file: clio::Input,
+
+    /// Output file, or pass "-" to write to stdout
+    #[clap(short, long, value_parser)]
+    output: clio::Output,
+}
 
 fn main() -> Result<()> {
-    let program = r#"
-/* x'+y=w -> x+y=z, w=z' */
-S(#x) :-: A(#y, #w) => #x = A(#y, #z), #w = S(#z)
+    let mut args = Cli::parse();
 
-/* 0+y=w -> y=w */
-O :-: A(#y, #w)     => #y = #w
+    let mut program = String::new();
+    args.file.read_to_string(&mut program)?;
 
-/* x'*y=w -> x*u=z, z+v=w, y=u & y=v */
-S(#x) :-: M(#y, #w) => #x = M(#u, #z), #z = A(#v, #w), #y = D(#u, #v)
+    let program = zamuza::compile(&program)?;
 
-/* 0*y=w -> forall y, w=0 */
-O :-: M(#y, #w)     => #y = E, #w = O
-
-/* x'=u & x'=v -> u=y', v=z', x=y & x=z */
-S(#x) :-: D(#u, #v) => #u = S(#y), #v = S(#z), #x = D(#y, #z)
-
-/* 0=u & 0=v -> u=0, v=0 */
-O :-: D(#u, #v)     => #u = O, #v = O
-
-/* forall x' -> forall x */
-S(#x) :-: E         => #x = E
-
-/* forall 0 -> _ */
-O :-: E             => _
-
-/* 2*2=r */
-S(S(O)) = M(S(S(O)), #r)
-
-/* r=4 */
-$ = #r
-    "#;
-
-    let program = zamuza::parser::parse(program)?;
-
-    println!("/*\n{}*/", program);
-
-    let mut runtime = zamuza::runtime::RuntimeBuilder::new();
-    runtime.program(program)?;
-    let runtime = runtime.build()?;
-    println!("{}", runtime);
-
+    args.output.write_all(program.as_bytes())?;
     Ok(())
 }

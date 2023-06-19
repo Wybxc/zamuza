@@ -1,0 +1,19 @@
+/*
+ * Calculate 3 * 3
+ */
+
+S(#x) >> Add(#y, @w) => #x -> Add(#y, @z), @w <- S(#z)
+S(#x) >> Mul(#y, @w) => #y -> Dup(@u, @v), #x -> Mul(#u, @z), #z -> Add(#v, @w)
+S(#x) >> Dup(@u, @v) => #x -> Dup(@y, @z), @u <- S(#z), @v <- S(#y)
+S(#x) >> Erase       => #x -> Erase
+
+Zero >> Add(#x, @y) => #x -> @y
+Zero >> Mul(#x, @y) => #x -> Erase, @y <- Zero
+Zero >> Dup(@x, @y) => @x <- Zero, @y <- Zero
+Zero >> Erase       => _
+
+:: @three <- S(S(S(Zero)))
+:: #three -> Dup(@x, @y)
+:: #x -> Mul(#y, @result)
+
+$ = #result

@@ -1,0 +1,84 @@
+/*
+ * Quicksort (Binary)
+ *
+ * Sorts a list of [True, False], where True is greater than False.
+ */
+
+/* Tuple */
+Tuple(#a, #b) >> Tuple'(@a', @b') => #a -> @a', #b -> @b'
+
+/* Lists */
+Nil           >> Append(#l, @r) => #l -> @r
+Cons(#x, #xs) >> Append(#l, @r)  =>     
+    #xs -> Append(#l, @r'),
+    @r <- Cons(#x, #r')
+
+/* Boolean */
+True  >> And(#a, @b)  => #a -> @b
+True  >> Or(#a, @b)   => @b <- True, #a -> Erase
+True  >> Not(@b)      => @b <- False
+False >> And(#a, @b)  => @b <- False, #a -> Erase
+False >> Or(#a, @b)   => #a -> @b
+False >> Not(@b)      => @b <- True
+
+/* Boolean Comparison */
+True  >> Less(#a, @b)    => #a -> Erase, @b <- False
+True  >> Greater(#a, @b) => #a -> Not(@b)
+False >> Less(#a, @b)    => @b <- #a
+False >> Greater(#a, @b) => #a -> Erase, @b <- False
+
+/* Conditional */
+True  >> If(@out, #then, #else) => #then -> @out, #else -> Erase
+False >> If(@out, #then, #else) => #then -> Erase, #else -> @out
+
+/* Duplication */
+Nil           >> Dup(@a, @b) => @a <- Nil, @b <- Nil
+Cons(#x, #xs) >> Dup(@a, @b) => 
+    #x -> Dup(@u, @v),
+    #xs -> Dup(@us, @vs),
+    @a <- Cons(#u, #us),
+    @b <- Cons(#v, #vs)
+True  >> Dup(@a, @b) => @a <- True, @b <- True
+False >> Dup(@a, @b) => @a <- False, @b <- False
+
+/* Erase */
+Erase << Nil           => _
+Erase << True          => _
+Erase << False         => _
+Erase << Cons(#x, #xs) => #x -> Erase, #xs -> Erase
+Erase << Tuple(#a, #b) => #a -> Erase, #b -> Erase
+
+/* Sort */
+QSort(@r) << Nil           => @r <- Nil
+QSort(@r) << Cons(#x, #xs) =>
+    #x -> Dup(@u, @v),
+    Partition(@smaller, @greater, #u) <- #xs,
+    QSort(@smaller') <- #smaller,
+    QSort(@greater') <- #greater,
+    #smaller' -> Append(Cons(#v, #greater'), @r)
+
+/* Partition */
+Partition(@smaller, @greater, #pivot) << Nil =>
+    @smaller <- Nil,
+    @greater <- Nil,
+    #pivot -> Erase
+Partition(@smaller, @greater, #pivot) << Cons(#x, #xs) =>
+    #less -> If(Tuple'(@smaller, @greater),
+        Tuple(Cons(#x1, #s1), #g1),
+        Tuple(#s2, Cons(#x2, #g2))
+    ),
+    #x3 -> Less(#p1, @less),
+    Partition(@s, @g, #p2) <- #xs,
+    #x -> Dup(@x1, @x'),
+    #x' -> Dup(@x2, @x3),
+    #pivot -> Dup(@p1, @p2),
+    #s -> Dup(@s1, @s2),
+    #g -> Dup(@g1, @g2)
+
+/* Main */
+:: @arr <- Cons(False, Cons(True, Cons(True, Cons(False, Cons(False, Nil)))))
+:: #arr -> Dup(@arr1, @arr2)
+:: #arr1 -> Append(#arr2, @arr3)
+:: QSort(@sorted) <- #arr3
+
+$ = #sorted

@@ -39,19 +39,44 @@ pub fn parse(input: &str) -> Result<ast::Program> {
     let interface = interface.ok_or_else(|| anyhow!("The program must have an interface"))?;
     Ok(ast::Program {
         rules,
-        equations,
+        net: equations,
         interface,
     })
 }
 
 fn parse_rule(rule: Pair<Rule>) -> Result<ast::Rule> {
     let mut rule = rule.into_inner();
-    let terms = [
-        parse_rule_term(rule.next().unwrap())?,
-        parse_rule_term(rule.next().unwrap())?,
-    ];
+
+    let terms = rule.next().unwrap();
+    let right_to_left = match terms.as_rule() {
+        Rule::RuleTermsLeftRight => false,
+        Rule::RuleTermsRightLeft => true,
+        _ => unreachable!(),
+    };
+
+    let mut terms = terms.into_inner();
+    let terms = (
+        parse_rule_term(terms.next().unwrap())?,
+        parse_rule_term(terms.next().unwrap())?,
+    );
+
     let equations = parse_rule_equations(rule.next().unwrap())?;
-    Ok(ast::Rule { terms, equations })
+
+    let term_pair = if !right_to_left {
+        ast::RuleTermPair {
+            left: terms.0,
+            right: terms.1,
+        }
+    } else {
+        ast::RuleTermPair {
+            left: terms.1,
+            right: terms.0,
+        }
+    };
+    Ok(ast::Rule {
+        term_pair,
+        equations,
+    })
 }
 
 fn parse_rule_term(term: Pair<Rule>) -> Result<ast::RuleTerm> {
@@ -69,11 +94,30 @@ fn parse_rule_equations(equations: Pair<Rule>) -> Result<Vec<ast::Equation>> {
 
 fn parse_equation(equation: Pair<Rule>) -> Result<ast::Equation> {
     let mut terms = equation.into_inner();
-    let left = terms.next().unwrap();
-    let right = terms.next().unwrap();
-    Ok(ast::Equation {
-        left: parse_term(left)?,
-        right: parse_term(right)?,
+
+    let terms = terms.next().unwrap();
+    let right_to_left = match terms.as_rule() {
+        Rule::EquationLeftRight => false,
+        Rule::EquationRightLeft => true,
+        _ => unreachable!(),
+    };
+
+    let mut terms = terms.into_inner();
+    let terms = (
+        parse_term(terms.next().unwrap())?,
+        parse_term(terms.next().unwrap())?,
+    );
+
+    Ok(if !right_to_left {
+        ast::Equation {
+            left: terms.0,
+            right: terms.1,
+        }
+    } else {
+        ast::Equation {
+            left: terms.1,
+            right: terms.0,
+        }
     })
 }
 
@@ -100,7 +144,14 @@ fn parse_term(term: Pair<Rule>) -> Result<ast::Term> {
 }
 
 fn parse_name(name: Pair<Rule>) -> ast::Name {
-    ast::Name(name.into_inner().as_str().to_string())
+    let name = name.into_inner().next().unwrap();
+    let rule = name.as_rule();
+    let name = name.into_inner().next().unwrap().as_str().to_string();
+    match rule {
+        Rule::NameIn => ast::Name::In(name),
+        Rule::NameOut => ast::Name::Out(name),
+        _ => unreachable!(),
+    }
 }
 
 fn parse_agent(agent: Pair<Rule>) -> String {

@@ -13,7 +13,7 @@
 //!
 //! ```
 //! use zamuza::ast::*;
-//! 
+//!
 //! let name = Name("x".to_string());
 //! let agent = Agent {
 //!     name: "F".to_string(),
@@ -49,13 +49,39 @@
 
 use std::fmt::Display;
 
-/// 交互器名称
+/// 变量名称
 #[derive(Debug, Clone, PartialEq)]
-pub struct Name(pub String);
+pub enum Name {
+    /// 输入变量
+    In(String),
+    /// 输出变量
+    Out(String),
+}
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "#{}", self.0)
+        match self {
+            Name::In(name) => write!(f, "#{}", name),
+            Name::Out(name) => write!(f, "@{}", name),
+        }
+    }
+}
+
+impl Name {
+    /// 获取变量名称
+    pub fn as_name(&self) -> &str {
+        match self {
+            Name::In(name) => name,
+            Name::Out(name) => name,
+        }
+    }
+
+    /// 获取变量名称
+    pub fn into_name(self) -> String {
+        match self {
+            Name::In(name) => name,
+            Name::Out(name) => name,
+        }
     }
 }
 
@@ -116,7 +142,7 @@ pub struct Equation {
 
 impl Display for Equation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}", self.left, self.right)
+        write!(f, "{} -> {}", self.left, self.right)
     }
 }
 
@@ -148,18 +174,33 @@ impl Display for RuleTerm {
     }
 }
 
+/// 规则项对
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuleTermPair {
+    /// 规则项对左侧
+    pub left: RuleTerm,
+    /// 规则项对右侧
+    pub right: RuleTerm,
+}
+
+impl Display for RuleTermPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} >> {}", self.left, self.right)
+    }
+}
+
 /// 程序中的规则
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
     /// 规则中的两个项
-    pub terms: [RuleTerm; 2],
+    pub term_pair: RuleTermPair,
     /// 规则中的方程
     pub equations: Vec<Equation>,
 }
 
 impl Display for Rule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} :-: {}", self.terms[0], self.terms[1])?;
+        write!(f, "{}", self.term_pair)?;
         if !self.equations.is_empty() {
             write!(
                 f,
@@ -181,7 +222,7 @@ pub struct Program {
     /// 程序中的规则
     pub rules: Vec<Rule>,
     /// 程序中的方程
-    pub equations: Vec<Equation>,
+    pub net: Vec<Equation>,
     /// 程序的接口
     pub interface: Term,
 }
@@ -191,7 +232,7 @@ impl Display for Program {
         for rule in &self.rules {
             writeln!(f, "{}", rule)?;
         }
-        for equation in &self.equations {
+        for equation in &self.net {
             writeln!(f, "{}", equation)?;
         }
         writeln!(f, "$ = {}", self.interface)
