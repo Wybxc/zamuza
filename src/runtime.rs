@@ -1,3 +1,5 @@
+//! 运行时构建器。
+
 use anyhow::{bail, Result};
 
 use crate::ast;
@@ -5,9 +7,12 @@ use crate::ast;
 const PRELUDE: &str = r#"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 size_t* EQ_STACK[1000][2];
 size_t EQ_STACK_SIZE = 0;
+
+size_t REDUCTIONS = 0;
 
 typedef void (*RuleFun)(size_t* left, size_t* right);
 
@@ -94,6 +99,7 @@ void run() {
 
     while (EQ_STACK_SIZE) {
         pop_equation(&left, &right);
+        REDUCTIONS++;
 
 #ifdef DEBUG
         printf("equation: ");
@@ -148,6 +154,7 @@ struct Arity(pub usize);
 struct Name(pub String);
 struct AgentId(pub usize);
 
+/// 用于构建运行时的构建器。
 #[derive(Default)]
 pub struct RuntimeBuilder {
     global: GlobalBuilder,
@@ -157,29 +164,35 @@ pub struct RuntimeBuilder {
 }
 
 impl RuntimeBuilder {
+    /// 创建一个新的 `RuntimeBuilder`。
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// 将 `Term` 转换为字符串表示。
     pub fn term(&mut self, term: ast::Term) -> Result<String> {
         self.main.term(&mut self.global, term)
     }
 
+    /// 向运行时添加一个 `Rule`。
     pub fn rule(&mut self, rule: ast::Rule) -> Result<&mut Self> {
         self.rules.rule(&mut self.global, rule)?;
         Ok(self)
     }
 
+    /// 向运行时添加一个 `Equation`。
     pub fn equation(&mut self, equation: ast::Equation) -> Result<&mut Self> {
         self.main.equation(&mut self.global, equation)?;
         Ok(self)
     }
 
+    /// 设置运行时的接口。
     pub fn interface(&mut self, interface: ast::Term) -> Result<&mut Self> {
         self.interface = Some(self.term(interface)?);
         Ok(self)
     }
 
+    /// 向运行时添加一个 `Program`。
     pub fn program(&mut self, program: ast::Program) -> Result<&mut Self> {
         for rule in program.rules {
             self.rule(rule)?;
@@ -190,19 +203,36 @@ impl RuntimeBuilder {
         self.interface(program.interface)
     }
 
+    /// 构建运行时。
     pub fn build(mut self) -> Result<String> {
         let interface = match self.interface {
             Some(interface) => interface,
             None => bail!("interface is not given"),
         };
 
-        self.main.signature("int main()".into()).after(format!(
-            r#"
+        self.main
+            .signature("int main()".into())
+            .before(
+                r#"
+    clock_t start = clock();
+                "#
+                .to_string(),
+            )
+            .after(format!(
+                r#"
     run();
     print_term({interface}, 1000);
+    printf("\n");
+
+    clock_t end = clock();
+    double time = (double) (end - start) / CLOCKS_PER_SEC;
+    double reductions_per_second = (double) REDUCTIONS / time;
+
+    printf("\n[Reductions: %zu, CPU time: %f, R/s: %f]\n", REDUCTIONS, time, reductions_per_second);
+    
     return 0;
             "#
-        ));
+            ));
 
         let main = self.main.build()?;
         let global = self.global.build();

@@ -1,11 +1,18 @@
+//! 语法解析器。
+
 use crate::ast;
 use anyhow::{anyhow, bail, Result};
 use pest::{iterators::Pair, Parser};
 
-#[derive(Parser)]
-#[grammar = "zamuza.pest"]
-pub struct ZamuzaParser;
+mod grammar {
+    #[derive(Parser)]
+    #[grammar = "zamuza.pest"]
+    pub struct ZamuzaParser;
+}
 
+use grammar::{Rule, ZamuzaParser};
+
+/// 从文本生成抽象语法树
 pub fn parse(input: &str) -> Result<ast::Program> {
     let mut parsed = ZamuzaParser::parse(Rule::Program, input)?;
     let pairs = parsed.next().unwrap().into_inner();
