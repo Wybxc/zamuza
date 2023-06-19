@@ -1,0 +1,21 @@
+Program = { SOI ~ (Rule | Equation | Interface)+ ~ EOI }
+
+Rule          = { RuleTerm ~ ":-:" ~ RuleTerm ~ "=>" ~ RuleEquations }
+RuleTerm      = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ ")")? }
+RuleEquations = { "_" | Equation ~ (Comma ~ Equation)* }
+
+Equation = { Term ~ "=" ~ Term }
+
+Interface = { "$" ~ "=" ~ Term }
+
+Term  = { Name | Agent ~ ("(" ~ Term ~ (Comma ~ Term)* ~ ")")? }
+Name  = { "#" ~ Ident }
+Agent = { Ident }
+
+Ident  = @{ Letter+ }
+Letter =  { LETTER | "_" }
+
+Comma = _{ "," }
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
