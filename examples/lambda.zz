@@ -1,0 +1,69 @@
+
+/* Lambda */
+Lambda(@param, #body) >> Apply(#arg, @out) =>
+    @out <- #body,
+    #arg -> @param
+
+Lambda(@param, #body) >> Dup(@u, @v) =>
+    @param <- Elide(#p1, #p2),
+    #body -> Dup(@b1, @b2),
+    Lambda(@p1, #b1) -> @u,
+    Lambda(@p2, #b2) -> @v
+
+Elide(#x, #y) >> Apply(#arg, @out) =>
+    #arg -> Dup(@arg1, @arg2),
+    @out <- Elide(#out1, #out2),
+    #x -> Apply(#arg1, @out1),
+    #y -> Apply(#arg2, @out2)
+
+/* List */
+Nil           >> Map(#f, @out) => #f -> Erase, @out <- Nil
+Cons(#x, #xs) >> Map(#f, @out) =>
+    #f -> Dup(@f1, @f2),
+    #f1 -> Apply(#x, @out1),
+    #xs -> Map(#f2, @out2),
+    @out <- Cons(#out1, #out2)
+
+/* Enum */
+A >> Next(@out) => @out <- B
+B >> Next(@out) => @out <- C
+C >> Next(@out) => @out <- A
+
+/* Misc */
+Elide(#x, #y) >> Dup(@u, @v) => #x -> @u, #y -> @v
+
+Nil           >> Dup(@u, @v) => @u <- Nil, @v <- Nil
+Cons(#x, #xs) >> Dup(@u, @v) => #x -> Dup(@u', @v'), #xs -> Dup(@u'', @v''), 
+                                @u <- Cons(#u', #u''), @v <- Cons(#v', #v'')
+
+Elide(#x, #y) >> Map(#f, @out) => 
+    #f -> Dup(@f1, @f2),
+    @out <- Elide(#out1, #out2),
+    #x -> Map(#f1, @out1),
+    #y -> Map(#f2, @out2)
+
+Elide(#x, #y) >> Next(@out) => @out <- Elide(#out1, #out2), #x -> Next(@out1), #y -> Next(@out2)
+
+A >> Dup(@u, @v) => @u <- A, @v <- A
+B >> Dup(@u, @v) => @u <- B, @v <- B
+C >> Dup(@u, @v) => @u <- C, @v <- C
+
+Lambda(@param, #body) >> Erase => @param <- Nothing, #body -> Erase
+Elide(#x, #y)         >> Erase => #x -> Erase, #y -> Erase
+
+A >> Erase => _
+B >> Erase => _
+C >> Erase => _
+
+Nothing >> Apply(#arg, @out) => #arg -> Erase, @out <- Nothing
+Nothing >> Dup(@u, @v)       => @u <- Nothing, @v <- Nothing
+Nothing >> Map(#f, @out)     => #f -> Erase, @out <- Nothing
+Nothing >> Next(@out)        => @out <- Nothing
+Nothing >> Erase             => _
+
+:: @l <- Cons(A, Cons(B, Cons(C, Nil)))
+:: @f <- Lambda(@x, #f_body)
+:: #x -> Next(@f_body)
+:: #l -> Map(#f, @out)
+
+$ = #out
