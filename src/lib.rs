@@ -14,15 +14,16 @@ pub mod parser;
 pub mod runtime;
 
 use anyhow::Result;
+use runtime::RuntimeBuilder;
 
 /// Compile a program to a runtime.
-pub fn compile(input: &str) -> Result<String> {
+pub fn compile(input: &str, output: impl std::io::Write) -> Result<()> {
     let program = parser::parse(input)?;
     check::check_program(&program)?;
 
-    let mut runtime_builder = runtime::RuntimeBuilder::new();
+    let mut runtime_builder = RuntimeBuilder::new();
     runtime_builder.program(program)?;
     let runtime = runtime_builder.build()?;
 
-    Ok(runtime)
+    runtime.write::<runtime::target::C>(output)
 }

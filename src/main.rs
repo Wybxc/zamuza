@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use std::io::{Read, Write};
+use std::io::Read;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -20,8 +20,7 @@ fn main() -> Result<()> {
     let mut program = String::new();
     args.file.read_to_string(&mut program)?;
 
-    let program = zamuza::compile(&program)?;
+    zamuza::compile(&program, args.output)?;
 
-    args.output.write_all(program.as_bytes())?;
     Ok(())
 }

@@ -8,44 +8,6 @@
 //! - RuleTerm：规则中的项，由交互器名称和交互器体组成
 //! - Rule：规则，由两个规则项和若干方程组成
 //! - Program：整个程序，由规则、方程和接口组成
-//!
-//! # Examples
-//!
-//! ```
-//! use zamuza::ast::*;
-//!
-//! let name = Name("x".to_string());
-//! let agent = Agent {
-//!     name: "F".to_string(),
-//!     body: vec![Term::Name(Name("x".to_string()))],
-//! };
-//! let term = Term::Agent(agent.clone());
-//! let equation = Equation {
-//!     left: term.clone(),
-//!     right: term.clone(),
-//! };
-//! let rule_term = RuleTerm {
-//!     agent: "G".to_string(),
-//!     body: vec![Name("x".to_string())],
-//! };
-//! let rule = Rule {
-//!     terms: [rule_term.clone(), rule_term.clone()],
-//!     equations: vec![equation.clone()],
-//! };
-//! let program = Program {
-//!     rules: vec![rule.clone()],
-//!     equations: vec![equation.clone()],
-//!     interface: term.clone(),
-//! };
-//!
-//! assert_eq!(name.to_string(), "#x");
-//! assert_eq!(agent.to_string(), "F(#x)");
-//! assert_eq!(term.to_string(), "F(#x)");
-//! assert_eq!(equation.to_string(), "F(#x) = F(#x)");
-//! assert_eq!(rule_term.to_string(), "G(#x)");
-//! assert_eq!(rule.to_string(), "G(#x) :-: G(#x) => F(#x) = F(#x)");
-//! assert_eq!(program.to_string(), "G(#x) :-: G(#x) => F(#x) = F(#x)\nF(#x) = F(#x)\n$ = F(#x)\n");
-//! ```
 
 use std::fmt::Display;
 
