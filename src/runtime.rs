@@ -9,7 +9,9 @@ const PRELUDE: &str = r#"
 #include <stdlib.h>
 #include <time.h>
 
-size_t* EQ_STACK[1000][2];
+#define MAX_STACK_SIZE 2000
+
+size_t* EQ_STACK[MAX_STACK_SIZE][2];
 size_t EQ_STACK_SIZE = 0;
 
 size_t REDUCTIONS = 0;
@@ -51,6 +53,10 @@ size_t* new_name() {
 }
 
 void push_equation(size_t* left, size_t* right) {
+    if (EQ_STACK_SIZE >= MAX_STACK_SIZE) {
+        printf("error: stack overflow\n");
+        exit(1);
+    }
     EQ_STACK[EQ_STACK_SIZE][0] = left;
     EQ_STACK[EQ_STACK_SIZE][1] = right;
     EQ_STACK_SIZE++;

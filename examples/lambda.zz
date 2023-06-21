@@ -63,7 +63,9 @@ Nothing >> Erase             => _
 
 :: @l <- Cons(A, Cons(B, Cons(C, Nil)))
 :: @f <- Lambda(@x, #f_body)
+:: #f -> Dup(@f1, @f2)
 :: #x -> Next(@f_body)
-:: #l -> Map(#f, @out)
+:: #l -> Map(#f1, @l')
+:: #l' -> Map(#f2, @out)
 
 $ = #out
