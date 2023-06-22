@@ -58,7 +58,6 @@
               "rustfmt"
             ])
             fenixPkgs.rust-analyzer
-            pkgs.gdb
 
             (rustPlatform.buildRustPackage
               rec {
@@ -82,6 +81,8 @@
                   pkgs.darwin.apple_sdk.frameworks.CoreServices
                 ];
               })
+          ] ++ optionals (!pkgs.stdenv.isDarwin) [
+            pkgs.gdb
           ];
 
           buildInputs = optionals pkgs.stdenv.isDarwin [
