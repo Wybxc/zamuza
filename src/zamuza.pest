@@ -11,7 +11,7 @@ Equation          =  { EquationLeftRight | EquationRightLeft }
 EquationLeftRight =  { Term ~ "->" ~ Term }
 EquationRightLeft =  { Term ~ "<-" ~ Term }
 
-Interface = { "$" ~ "=" ~ Term }
+Interface = { "::" ~ ("$" ~ "<-" ~ Term | Term ~ "->" ~ "$") }
 
 Term    = { Name | Agent ~ ("(" ~ Term ~ (Comma ~ Term)* ~ ")")? }
 Name    = { NameIn | NameOut }

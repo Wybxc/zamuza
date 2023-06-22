@@ -186,7 +186,7 @@ pub struct Program {
     /// 程序中的方程
     pub net: Vec<Equation>,
     /// 程序的接口
-    pub interface: Term,
+    pub interfaces: Vec<Term>,
 }
 
 impl Display for Program {
@@ -197,6 +197,9 @@ impl Display for Program {
         for equation in &self.net {
             writeln!(f, "{}", equation)?;
         }
-        writeln!(f, "$ = {}", self.interface)
+        for interface in &self.interfaces {
+            writeln!(f, "{} -> $", interface)?;
+        }
+        Ok(())
     }
 }

@@ -336,13 +336,15 @@ int main() {{
             Self::write_instruction(&mut f, instruction)?;
         }
 
+        writeln!(f, "\n\n    run();")?;
+        for output in main.outputs {
+            writeln!(f, r#"    print_term(stdout, {output}, 1000);"#)?;
+            writeln!(f, r#"    printf("\n");"#)?;
+        }
+
         write!(
             f,
             r#"
-
-    run();
-    print_term(stdout, {interface}, 1000);
-    printf("\n");
 
 #ifdef ZZ_TIMING
     clock_t end = clock();
@@ -354,7 +356,6 @@ int main() {{
     return 0;
 }}
 "#,
-            interface = main.output
         )?;
 
         Ok(())

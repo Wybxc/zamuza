@@ -16,7 +16,7 @@ enum ArgSlot {
 #[derive(Default)]
 pub struct RuntimeBuilder {
     global: GlobalBuilder,
-    interface: Option<ir::Local>,
+    interfaces: Vec<ir::Local>,
     rules: RulesBuilder,
     main: FunctionBuilder,
 }
@@ -45,7 +45,8 @@ impl RuntimeBuilder {
 
     /// 设置运行时的接口。
     pub fn interface(&mut self, interface: ast::Term) -> Result<&mut Self> {
-        self.interface = Some(self.term(interface)?);
+        let term = self.term(interface)?;
+        self.interfaces.push(term);
         Ok(self)
     }
 
@@ -57,20 +58,19 @@ impl RuntimeBuilder {
         for equation in program.net {
             self.equation(equation)?;
         }
-        self.interface(program.interface)
+        for interface in program.interfaces {
+            self.interface(interface)?;
+        }
+        Ok(self)
     }
 
     /// 构建运行时。
     pub fn build(self) -> Result<ir::Program> {
-        let interface = match self.interface {
-            Some(interface) => interface,
-            None => bail!("interface is not given"),
-        };
         let main = self.main.build()?;
         let main = ir::Main {
             initializers: main.0,
             instructions: main.1,
-            output: interface,
+            outputs: self.interfaces,
         };
 
         let agent_metas = self.global.build();

@@ -1,7 +1,7 @@
 //! 语法解析器。
 
 use crate::ast;
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 
 mod grammar {
@@ -19,28 +19,24 @@ pub fn parse(input: &str) -> Result<ast::Program> {
 
     let mut rules = vec![];
     let mut equations = vec![];
-    let mut interface = None;
+    let mut interfaces = vec![];
 
     for pair in pairs {
         match pair.as_rule() {
             Rule::Rule => rules.push(parse_rule(pair)?),
             Rule::Equation => equations.push(parse_equation(pair)?),
             Rule::Interface => {
-                if interface.is_some() {
-                    bail!("Interface can only be defined once");
-                }
-                interface = Some(parse_interface(pair)?);
+                interfaces.push(parse_interface(pair)?);
             }
             Rule::EOI => {}
             _ => unreachable!(),
         }
     }
 
-    let interface = interface.ok_or_else(|| anyhow!("The program must have an interface"))?;
     Ok(ast::Program {
         rules,
         net: equations,
-        interface,
+        interfaces,
     })
 }
 

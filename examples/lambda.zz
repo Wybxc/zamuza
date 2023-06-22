@@ -67,5 +67,4 @@ Nothing >> Erase             => _
 :: #x -> Next(@f_body)
 :: #l -> Map(#f1, @l')
 :: #l' -> Map(#f2, @out)
-
-$ = #out
+:: $ <- #out

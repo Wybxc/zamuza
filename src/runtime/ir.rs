@@ -160,7 +160,7 @@ impl Display for Rule {
 pub struct Main {
     pub initializers: Vec<Initializer>,
     pub instructions: Vec<Instruction>,
-    pub output: Local,
+    pub outputs: Vec<Local>,
 }
 
 impl Display for Main {
@@ -175,7 +175,9 @@ impl Display for Main {
         writeln!(f)?;
         writeln!(f, "    init_rules();")?;
         writeln!(f, "    run();")?;
-        writeln!(f, "    print({});", self.output)?;
+        for output in &self.outputs {
+            writeln!(f, "    print({});", output)?;
+        }
         writeln!(f, "}}")?;
         Ok(())
     }

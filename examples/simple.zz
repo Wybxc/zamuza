@@ -7,5 +7,4 @@ Zero >> Add(#x, @y) => #x -> @y
 
 :: @two <- S(S(S(Zero)))
 :: #two -> Add(S(Zero), @result)
-
-$ = #result
+:: $ <- #result

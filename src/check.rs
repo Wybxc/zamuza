@@ -64,7 +64,9 @@ pub fn check_rule_variables(rule: &ast::Rule) -> Result<()> {
 /// 网络中，所有变量必须恰好出现两次
 pub fn check_net_variables(program: &ast::Program) -> Result<()> {
     let mut names = HashMap::new();
-    count_names(&program.interface, &mut names);
+    for interface in &program.interfaces {
+        count_names(interface, &mut names);
+    }
     for equation in &program.net {
         count_names(&equation.left, &mut names);
         count_names(&equation.right, &mut names);
@@ -140,7 +142,9 @@ fn check_equations_io_balance<'a>(
 /// 网络输入-输出平衡
 pub fn check_net_io_balanse(program: &ast::Program) -> Result<()> {
     let mut input_map = HashMap::new();
-    check_term_io_balance(&program.interface, &mut input_map)?;
+    for interface in &program.interfaces {
+        check_term_io_balance(interface, &mut input_map)?;
+    }
     check_equations_io_balance(&program.net, input_map)
 }
 

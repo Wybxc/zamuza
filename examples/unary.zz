@@ -15,5 +15,4 @@ Zero >> Erase       => _
 :: @three <- S(S(S(Zero)))
 :: #three -> Dup(@x, @y)
 :: #x -> Mul(#y, @result)
-
-$ = #result
+:: $ <- #result

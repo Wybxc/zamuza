@@ -268,8 +268,10 @@ impl VM {
             }
         }
 
-        let output = main_frame.get(&self.main.output);
-        println!("{}", self.runtime.print(&output, 1000)?);
+        for output in self.main.outputs {
+            let output = main_frame.get(&output);
+            println!("{}", self.runtime.print(&output, 1000)?);
+        }
 
         if self.timing {
             let time = (Instant::now() - start_time).as_secs_f64();
