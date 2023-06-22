@@ -28,7 +28,7 @@ struct Runtime {
     /// Name counter.
     name_counter: usize,
     /// Equation stack.
-    equation_stack: Vec<(PValue, PValue)>,
+    equation_stack: Vec<(NonNullValue, NonNullValue)>,
     /// Max stack size.
     max_stack_size: usize,
     overflowed: bool,
@@ -70,9 +70,9 @@ impl VM {
 
 #[derive(Default)]
 struct StackFrame {
-    names: Vec<PValue>,
-    agents: Vec<PValue>,
-    slots: Vec<PValue>,
+    names: Vec<Value>,
+    agents: Vec<Value>,
+    slots: Vec<Value>,
 }
 
 impl StackFrame {
@@ -81,50 +81,88 @@ impl StackFrame {
     }
 }
 
-type PValue = Option<Rc<RefCell<Value>>>;
+struct Term {
+    id: ir::AgentId,
+    slots: Vec<Value>,
+}
+
+enum Ref {
+    Name(usize),
+    Value(NonNullValue),
+}
+
+enum NonNullValue {
+    Term(Term),
+    Ref(Rc<RefCell<Ref>>),
+}
+
 enum Value {
-    Agent { id: ir::AgentId, slots: Vec<PValue> },
-    Name { id: usize },
-    Ref(PValue),
+    Term(Option<Term>),
+    Ref(Rc<RefCell<Ref>>),
+}
+
+impl Term {
+    pub fn slot(&mut self, index: usize) -> Option<Value> {
+        Some(self.slots.get_mut(index - 1)?.take())
+    }
+
+    pub fn slot_mut(&mut self, index: usize) -> Option<&mut Value> {
+        self.slots.get_mut(index - 1)
+    }
+}
+
+impl From<NonNullValue> for Value {
+    fn from(value: NonNullValue) -> Self {
+        match value {
+            NonNullValue::Term(t) => Self::Term(Some(t)),
+            NonNullValue::Ref(r) => Self::Ref(r),
+        }
+    }
+}
+
+impl TryFrom<Value> for NonNullValue {
+    type Error = ();
+
+    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Value::Term(Some(t)) => Ok(NonNullValue::Term(t)),
+            Value::Term(None) => Err(()),
+            Value::Ref(r) => Ok(NonNullValue::Ref(r)),
+        }
+    }
 }
 
 impl Value {
-    fn new_agent(id: ir::AgentId, slots: Vec<PValue>) -> PValue {
-        Some(Rc::new(RefCell::new(Self::Agent { id, slots })))
+    pub fn new_agent(id: ir::AgentId, slots: Vec<Value>) -> Value {
+        Self::Term(Some(Term { id, slots }))
     }
 
-    fn new_name(id: usize) -> PValue {
-        Some(Rc::new(RefCell::new(Self::Name { id })))
+    pub fn new_name(id: usize) -> Value {
+        Self::Ref(Rc::new(RefCell::new(Ref::Name(id))))
     }
 
-    pub fn slot(&self, index: usize) -> Option<PValue> {
+    pub fn take(&mut self) -> Value {
         match self {
-            Self::Agent { slots, .. } => slots.get(index - 1).cloned(),
-            _ => None,
-        }
-    }
-
-    pub fn slot_mut(&mut self, index: usize) -> Option<&mut PValue> {
-        match self {
-            Self::Agent { slots, .. } => slots.get_mut(index - 1),
-            _ => None,
+            Value::Term(t) => Value::Term(t.take()),
+            Value::Ref(r) => Value::Ref(r.clone()),
         }
     }
 }
 
 impl Runtime {
-    pub fn new_agent(&self, agent_id: ir::AgentId) -> PValue {
+    pub fn new_agent(&self, agent_id: ir::AgentId) -> Value {
         let arity = self.agents[agent_id.0].arity;
-        let slots = vec![None; arity];
+        let mut slots = Vec::with_capacity(arity);
+        slots.resize_with(arity, || Value::Term(None));
         Value::new_agent(agent_id, slots)
     }
 
-    pub fn new_name(&mut self) -> PValue {
+    pub fn new_name(&mut self) -> Value {
         self.name_counter += 1;
         Value::new_name(self.name_counter)
     }
 
-    pub fn push_equation(&mut self, lhs: PValue, rhs: PValue) {
+    pub fn push_equation(&mut self, lhs: NonNullValue, rhs: NonNullValue) {
         self.equation_stack.push((lhs, rhs));
         if !self.overflowed && self.equation_stack.len() > self.max_stack_size {
             self.overflowed = true;
@@ -132,8 +170,40 @@ impl Runtime {
         }
     }
 
-    pub fn pop_equation(&mut self) -> Option<(PValue, PValue)> {
+    pub fn pop_equation(&mut self) -> Option<(NonNullValue, NonNullValue)> {
         self.equation_stack.pop()
+    }
+
+    fn print_term(&self, term: &Term, max_recursion: usize) -> Result<String> {
+        let Term { id, slots } = term;
+        let mut s = self.agents[id.0].name.clone();
+        if !slots.is_empty() {
+            s.push('(');
+            let mut first = true;
+            for slot in slots {
+                if first {
+                    first = false;
+                } else {
+                    s.push_str(", ");
+                }
+                s.push_str(&self.print(slot, max_recursion - 1)?);
+            }
+            s.push(')');
+        }
+        Ok(s)
+    }
+
+    pub fn print_non_null(&self, value: &NonNullValue, max_recursion: usize) -> Result<String> {
+        if max_recursion == 0 {
+            return Ok("...".to_string());
+        }
+        match value {
+            NonNullValue::Term(term) => self.print_term(term, max_recursion),
+            NonNullValue::Ref(r) => match &*r.borrow() {
+                Ref::Name(n) => Ok(format!("x{n}")),
+                Ref::Value(t) => self.print_non_null(t, max_recursion),
+            },
+        }
     }
 
     pub fn print(&self, value: &Value, max_recursion: usize) -> Result<String> {
@@ -141,35 +211,12 @@ impl Runtime {
             return Ok("...".to_string());
         }
         match value {
-            Value::Agent { id, slots } => {
-                let mut s = self.agents[id.0].name.clone();
-                if !slots.is_empty() {
-                    s.push('(');
-                    let mut first = true;
-                    for slot in slots {
-                        if first {
-                            first = false;
-                        } else {
-                            s.push_str(", ");
-                        }
-                        if let Some(slot) = slot {
-                            s.push_str(&self.print(&slot.as_ref().borrow(), max_recursion - 1)?);
-                        } else {
-                            s.push('?');
-                        }
-                    }
-                    s.push(')');
-                }
-                Ok(s)
-            }
-            Value::Name { id } => Ok(format!("x{}", id)),
-            Value::Ref(value) => {
-                if let Some(value) = value {
-                    self.print(&value.as_ref().borrow(), max_recursion - 1)
-                } else {
-                    bail!("runtime error: value is None");
-                }
-            }
+            Value::Term(Some(term)) => self.print_term(term, max_recursion),
+            Value::Term(None) => Ok("?".to_string()),
+            Value::Ref(r) => match &*r.borrow() {
+                Ref::Name(n) => Ok(format!("x{n}")),
+                Ref::Value(t) => self.print_non_null(t, max_recursion),
+            },
         }
     }
 }
@@ -183,118 +230,46 @@ impl VM {
         let mut main_frame = StackFrame::new();
 
         main_frame
-            .execute(
+            .execute_main(
                 &mut self.runtime,
                 &self.main.initializers,
                 &self.main.instructions,
-                None,
-                None,
             )
             .map_err(|e| anyhow::anyhow!("in function main: {:?}", e))?;
 
-        while !self.runtime.equation_stack.is_empty() {
-            let (lhs, rhs) = self.runtime.pop_equation().unwrap();
-            if lhs.is_none() {
-                bail!("runtime error: lhs is None");
-            }
-            if rhs.is_none() {
-                bail!("runtime error: rhs is None");
-            }
-            let lhs = lhs.unwrap();
-            let rhs = rhs.unwrap();
-
+        while let Some((lhs, rhs)) = self.runtime.pop_equation() {
             reductions += 1;
 
             if self.trace {
                 let trace = format!(
                     "{} = {}",
-                    self.runtime.print(&lhs.as_ref().borrow(), 10)?,
-                    self.runtime.print(&rhs.as_ref().borrow(), 10)?
+                    self.runtime.print_non_null(&lhs, 3)?,
+                    self.runtime.print_non_null(&rhs, 3)?
                 )
                 .color(Colors::BrightBlackFg);
                 eprintln!("{trace}");
             }
 
-            // Indirection
-            if let Value::Ref(value) = &*lhs.as_ref().borrow() {
-                self.runtime.push_equation(value.clone(), Some(rhs));
-                continue;
-            };
-            if let Value::Ref(value) = &*rhs.as_ref().borrow() {
-                self.runtime.push_equation(Some(lhs), value.clone());
-                continue;
-            };
-
-            // Interaction
-            if let Value::Agent {
-                id: id_left,
-                slots: slots_left,
-            } = &*lhs.as_ref().borrow()
-            {
-                if let Value::Agent {
-                    id: id_right,
-                    slots: slots_right,
-                } = &*rhs.as_ref().borrow()
-                {
-                    let mut id_left = id_left;
-                    let mut id_right = id_right;
-                    let mut slots_left = slots_left;
-                    let mut slots_right = slots_right;
-                    let mut lhs = lhs.clone();
-                    let mut rhs = rhs.clone();
-
-                    if *id_left > *id_right {
-                        std::mem::swap(&mut id_left, &mut id_right);
-                        std::mem::swap(&mut slots_left, &mut slots_right);
-                        std::mem::swap(&mut lhs, &mut rhs);
+            match lhs {
+                NonNullValue::Ref(r) => match &mut *r.borrow_mut() {
+                    name @ Ref::Name(_) => self.reduce_variable(name, rhs),
+                    term @ Ref::Value(_) => self.reduce_indirection(term, rhs),
+                },
+                NonNullValue::Term(tl) => match rhs {
+                    NonNullValue::Ref(r) => {
+                        let lhs = NonNullValue::Term(tl);
+                        match &mut *r.borrow_mut() {
+                            name @ Ref::Name(_) => self.reduce_variable(name, lhs),
+                            term @ Ref::Value(_) => self.reduce_indirection(term, lhs),
+                        }
                     }
-
-                    let rule = self.rule_map.get(&(*id_left, *id_right));
-                    if let Some(rule) = rule {
-                        let mut frame = StackFrame::new();
-                        frame
-                            .execute(
-                                &mut self.runtime,
-                                &rule.initializers,
-                                &rule.instructions,
-                                Some(lhs.clone()),
-                                Some(rhs.clone()),
-                            )
-                            .map_err(|e| anyhow::anyhow!("in rule {}: {:?}", rule.index, e))?;
-                    } else {
-                        bail!(
-                            "runtime error: no rule for {} and {}",
-                            self.runtime.print(&lhs.as_ref().borrow(), 3)?,
-                            self.runtime.print(&rhs.as_ref().borrow(), 3)?
-                        );
-                    }
-
-                    continue;
-                }
-            };
-
-            // Variable
-            let mut left = lhs.borrow_mut();
-            if let Value::Name { .. } = &*left {
-                *left = Value::Ref(Some(rhs.clone()));
-                continue;
+                    NonNullValue::Term(tr) => self.reduce_interaction(tl, tr)?,
+                },
             }
-            drop(left);
-
-            let mut right = rhs.borrow_mut();
-            if let Value::Name { .. } = &*right {
-                *right = Value::Ref(Some(lhs.clone()));
-                continue;
-            }
-            drop(right);
         }
 
         let output = main_frame.get(&self.main.output);
-        if let Some(output) = output {
-            println!("{}", self.runtime.print(&output.as_ref().borrow(), 1000)?);
-        } else {
-            bail!("runtime error: output is None");
-        }
+        println!("{}", self.runtime.print(&output, 1000)?);
 
         if self.timing {
             let time = (Instant::now() - start_time).as_secs_f64();
@@ -305,30 +280,104 @@ impl VM {
         }
         Ok(())
     }
+
+    fn reduce_variable(&mut self, lhs: &mut Ref, rhs: NonNullValue) {
+        *lhs = Ref::Value(rhs);
+    }
+
+    fn reduce_indirection(&mut self, lhs: &mut Ref, rhs: NonNullValue) {
+        let mut value = Ref::Name(0);
+        std::mem::swap(&mut value, lhs);
+        let value = match value {
+            Ref::Name(_) => unreachable!(),
+            Ref::Value(v) => v,
+        };
+
+        self.runtime.push_equation(value, rhs);
+    }
+
+    fn reduce_interaction(&mut self, mut lhs: Term, mut rhs: Term) -> Result<()> {
+        let mut id_left = lhs.id;
+        let mut id_right = rhs.id;
+
+        if id_left > id_right {
+            std::mem::swap(&mut id_left, &mut id_right);
+            std::mem::swap(&mut lhs, &mut rhs);
+        }
+
+        let rule = self.rule_map.get(&(id_left, id_right));
+        if let Some(rule) = rule {
+            let mut frame = StackFrame::new();
+            frame
+                .execute(
+                    &mut self.runtime,
+                    &rule.initializers,
+                    &rule.instructions,
+                    lhs,
+                    rhs,
+                )
+                .map_err(|e| anyhow::anyhow!("in rule {}: {:?}", rule.index, e))?;
+        } else {
+            bail!(
+                "runtime error: no rule for {} and {}",
+                self.runtime.print_term(&lhs, 3)?,
+                self.runtime.print_term(&rhs, 3)?
+            );
+        }
+        Ok(())
+    }
 }
 
 impl StackFrame {
-    fn prepare_index(vec: &mut Vec<PValue>, index: usize) {
+    fn prepare_index(vec: &mut Vec<Value>, index: usize) {
         if vec.len() <= index {
-            vec.resize(index + 1, None);
+            vec.resize_with(index + 1, || Value::Term(None));
         }
     }
 
-    fn get(&self, local: &ir::Local) -> PValue {
+    fn get(&mut self, local: &ir::Local) -> Value {
         match local {
-            ir::Local::Name(index) => self.names[*index].clone(),
-            ir::Local::Agent(index) => self.agents[*index].clone(),
-            ir::Local::Slot(index) => self.slots[*index].clone(),
+            ir::Local::Name(index) => self.names[*index].take(),
+            ir::Local::Agent(index) => self.agents[*index].take(),
+            ir::Local::Slot(index) => self.slots[*index].take(),
         }
     }
 
-    pub fn execute(
+    fn get_mut(&mut self, local: &ir::Local) -> &mut Value {
+        match local {
+            ir::Local::Name(index) => &mut self.names[*index],
+            ir::Local::Agent(index) => &mut self.agents[*index],
+            ir::Local::Slot(index) => &mut self.slots[*index],
+        }
+    }
+
+    fn execute_main_initializers(
         &mut self,
         rt: &mut Runtime,
         initializers: &[ir::Initializer],
-        instructions: &[ir::Instruction],
-        lhs: PValue,
-        rhs: PValue,
+    ) -> Result<()> {
+        for initializer in initializers {
+            match initializer {
+                ir::Initializer::Name { index } => {
+                    Self::prepare_index(&mut self.names, *index);
+                    self.names[*index] = rt.new_name();
+                }
+                ir::Initializer::Agent { index, id } => {
+                    Self::prepare_index(&mut self.agents, *index);
+                    self.agents[*index] = rt.new_agent(*id);
+                }
+                _ => bail!("runtime error: invalid instruction `{}`", initializer),
+            }
+        }
+        Ok(())
+    }
+
+    fn execute_initializers(
+        &mut self,
+        rt: &mut Runtime,
+        initializers: &[ir::Initializer],
+        mut left: Term,
+        mut right: Term,
     ) -> Result<()> {
         for initializer in initializers {
             match initializer {
@@ -342,39 +391,36 @@ impl StackFrame {
                 }
                 ir::Initializer::SlotFromLeft { index, slot } => {
                     Self::prepare_index(&mut self.slots, *index);
-                    if let Some(ref left) = lhs {
-                        let left = left.as_ref().borrow();
-                        if let Some(slot) = left.slot(*slot) {
-                            self.slots[*index] = slot;
-                        } else {
-                            bail!(
-                                "runtime error: slot {slot} not found in {left} [{initializer}]",
-                                left = rt.print(&left, 3)?
-                            )
-                        }
+                    if let Some(slot) = left.slot(*slot) {
+                        self.slots[*index] = slot;
                     } else {
-                        bail!("runtime error: lhs is None [{initializer}]")
+                        bail!(
+                            "runtime error: slot {slot} not found in {left} [{initializer}]",
+                            left = rt.print_term(&left, 3)?
+                        )
                     }
                 }
                 ir::Initializer::SlotFromRight { index, slot } => {
                     Self::prepare_index(&mut self.slots, *index);
-                    if let Some(ref right) = rhs {
-                        let right = right.as_ref().borrow();
-                        if let Some(slot) = right.slot(*slot) {
-                            self.slots[*index] = slot;
-                        } else {
-                            bail!(
-                                "runtime error: slot {slot} not found in {right} [{initializer}]",
-                                right = rt.print(&right, 3)?
-                            )
-                        }
+                    if let Some(slot) = right.slot(*slot) {
+                        self.slots[*index] = slot;
                     } else {
-                        bail!("runtime error: rhs is None [{initializer}]")
+                        bail!(
+                            "runtime error: slot {slot} not found in {right} [{initializer}]",
+                            right = rt.print_term(&right, 3)?
+                        )
                     }
                 }
             }
         }
+        Ok(())
+    }
 
+    fn execute_instructions(
+        &mut self,
+        rt: &mut Runtime,
+        instructions: &[ir::Instruction],
+    ) -> Result<()> {
         for instruction in instructions {
             match instruction {
                 ir::Instruction::SetSlot {
@@ -382,37 +428,60 @@ impl StackFrame {
                     slot,
                     value,
                 } => {
-                    if let Some(target) = self.get(target) {
-                        let mut tgt = target.borrow_mut();
-                        if let Some(slot) = tgt.slot_mut(*slot) {
-                            if let Some(value) = self.get(value) {
-                                *slot = Some(value);
+                    let value = self.get(value);
+                    let tgt = self.get_mut(target);
+                    match tgt {
+                        Value::Term(Some(term)) => {
+                            if let Some(slot) = term.slot_mut(*slot) {
+                                *slot = value;
                             } else {
-                                bail!("runtime error: {value} is None [{instruction}]")
-                            }
-                        } else {
-                            bail!(
-                                "runtime error: slot {slot} not found in {target} [{instruction}]",
-                                target = rt.print(&tgt, 3)?,
+                                bail!(
+                                "runtime error: slot {slot} not found in {target} (executing {instruction})",
+                                target = rt.print_term(term, 3)?,
                             )
+                            }
                         }
-                    } else {
-                        bail!("runtime error: {target} is None [{instruction}]")
+                        Value::Term(None) => bail!(
+                            "runtime error: {target} is uninitialized or moved (executing {instruction})",
+                        ),
+                        Value::Ref(_) => bail!("runtime error: read slot from non-agent {target}"),
                     }
                 }
                 ir::Instruction::PushEquation { left, right, .. } => {
-                    if let Some(left) = self.get(left) {
-                        if let Some(right) = self.get(right) {
-                            rt.push_equation(Some(left), Some(right));
-                        } else {
-                            bail!("runtime error: {right} is None [{instruction}]")
-                        }
-                    } else {
-                        bail!("runtime error: {left} is None [{instruction}]")
-                    }
+                    let left = self.get(left).try_into().map_err(|_| {
+                        anyhow::anyhow!("runtime error: {left} is uninitialized or moved (executing `{instruction}`)")
+                    })?;
+                    let right = self.get(right).try_into().map_err(|_| {
+                        anyhow::anyhow!("runtime error: {right} is uninitialized or moved (executing `{instruction}`)")
+                    })?;
+                    rt.push_equation(left, right);
                 }
             }
         }
+        Ok(())
+    }
+
+    pub fn execute_main(
+        &mut self,
+        rt: &mut Runtime,
+        initializers: &[ir::Initializer],
+        instructions: &[ir::Instruction],
+    ) -> Result<()> {
+        self.execute_main_initializers(rt, initializers)?;
+        self.execute_instructions(rt, instructions)?;
+        Ok(())
+    }
+
+    pub fn execute(
+        &mut self,
+        rt: &mut Runtime,
+        initializers: &[ir::Initializer],
+        instructions: &[ir::Instruction],
+        lhs: Term,
+        rhs: Term,
+    ) -> Result<()> {
+        self.execute_initializers(rt, initializers, lhs, rhs)?;
+        self.execute_instructions(rt, instructions)?;
         Ok(())
     }
 }
