@@ -10,20 +10,30 @@ extern crate pest_derive;
 
 pub mod ast;
 pub mod check;
+pub mod options;
 pub mod parser;
 pub mod runtime;
 
 use anyhow::Result;
+use options::Options;
+use runtime::vm::VM;
 use runtime::RuntimeBuilder;
 
 /// Compile a program to a runtime.
-pub fn compile(input: &str, output: impl std::io::Write) -> Result<()> {
+pub fn compile(input: &str, output: impl std::io::Write, options: &Options) -> Result<()> {
     let program = parser::parse(input)?;
     check::check_program(&program)?;
 
-    let mut runtime_builder = RuntimeBuilder::new();
-    runtime_builder.program(program)?;
-    let runtime = runtime_builder.build()?;
+    let runtime = RuntimeBuilder::build_runtime(program)?;
+    runtime.write::<runtime::target::C>(output, options)
+}
 
-    runtime.write::<runtime::target::C>(output)
+/// Execute a program.
+pub fn execute(input: &str, options: &Options) -> Result<()> {
+    let program = parser::parse(input)?;
+    check::check_program(&program)?;
+
+    let runtime = RuntimeBuilder::build_runtime(program)?;
+    let vm = VM::new(runtime, options);
+    vm.run()
 }

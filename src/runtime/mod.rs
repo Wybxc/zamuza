@@ -3,5 +3,6 @@
 pub mod builder;
 pub mod ir;
 pub mod target;
+pub mod vm;
 
 pub use builder::RuntimeBuilder;

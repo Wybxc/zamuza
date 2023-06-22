@@ -2,6 +2,8 @@
 
 use std::fmt::Display;
 
+use crate::options::Options;
+
 use super::target::Target;
 use anyhow::Result;
 
@@ -219,7 +221,7 @@ impl Display for Program {
 
 impl Program {
     /// Write the program to a target.
-    pub fn write<T: Target>(self, f: impl std::io::Write) -> Result<()> {
-        T::write(f, self)
+    pub fn write<T: Target>(self, f: impl std::io::Write, options: &Options) -> Result<()> {
+        T::write(f, self, options)
     }
 }

@@ -2,14 +2,17 @@
 
 use anyhow::Result;
 
+use crate::options::Options;
+
 use super::ir;
 
 /// 编译到 C 语言的运行时
 pub struct C;
 
 impl super::Target for C {
-    fn write(mut f: impl std::io::Write, program: ir::Program) -> Result<()> {
-        Self::write_prelude(&mut f)?;
+    fn write(mut f: impl std::io::Write, program: ir::Program, options: &Options) -> Result<()> {
+        Self::write_includes(&mut f, options)?;
+        Self::write_prelude(&mut f, options)?;
         Self::write_global(&mut f, program.agents)?;
         Self::write_runtime(&mut f)?;
 
@@ -24,17 +27,32 @@ impl super::Target for C {
 }
 
 impl C {
-    const PRELUDE: &str = r#"
+    const INCLUDES: &str = r#"
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+"#;
 
-#define MAX_STACK_SIZE 2000
+    fn write_includes(mut f: impl std::io::Write, options: &Options) -> Result<()> {
+        f.write_all(C::INCLUDES.trim_start().as_bytes())?;
 
+        if options.timing {
+            writeln!(f, "#include <time.h>")?;
+            writeln!(f, "#define ZZ_TIMING")?;
+        }
+        if options.trace {
+            writeln!(f, "#define ZZ_TRACE")?;
+        }
+
+        Ok(())
+    }
+
+    const PRELUDE: &str = r#"
 size_t* EQ_STACK[MAX_STACK_SIZE][2];
 size_t EQ_STACK_SIZE = 0;
 
+#ifdef ZZ_TIMING
 size_t REDUCTIONS = 0;
+#endif
 
 typedef void (*RuleFun)(size_t* left, size_t* right);
 
@@ -42,13 +60,14 @@ size_t* new_agent(size_t agent_id);
 size_t* new_name();
 void push_equation(size_t* left, size_t* right);
 void pop_equation(size_t** left, size_t** right);
-void print_term(size_t* term, size_t max_recursion);
+void print_term(FILE* f, size_t* term, size_t max_recursion);
 void init_rules();
 void run();
 "#;
 
-    fn write_prelude(mut f: impl std::io::Write) -> Result<()> {
-        f.write_all(C::PRELUDE.trim_start().as_bytes())?;
+    fn write_prelude(mut f: impl std::io::Write, options: &Options) -> Result<()> {
+        writeln!(f, "#define MAX_STACK_SIZE {}", options.stack_size)?;
+        f.write_all(C::PRELUDE.as_bytes())?;
         Ok(())
     }
 
@@ -101,7 +120,7 @@ size_t* new_name() {
 
 void push_equation(size_t* left, size_t* right) {
     if (EQ_STACK_SIZE >= MAX_STACK_SIZE) {
-        printf("error: stack overflow\n");
+        fprintf(stderr, "error: stack overflow\n");
         exit(1);
     }
     EQ_STACK[EQ_STACK_SIZE][0] = left;
@@ -115,34 +134,34 @@ void pop_equation(size_t** left, size_t** right) {
     *right = EQ_STACK[EQ_STACK_SIZE][1];
 }
 
-void print_term(size_t* term, size_t max_recursion) {
-    if (term[0] == 0) {                 // the `$` agent
-        print_term((size_t*) term[1], max_recursion);
+void print_term(FILE* f, size_t* term, size_t max_recursion) {
+    if (term[0] == 0) {        // the `$` agent
+        print_term(f, (size_t*) term[1], max_recursion);
         return;
     }
     if (IS_NAME(term)) {       // name
-        printf("x%zu", term[0]);
+        fprintf(f, "x%zu", term[0]);
         return;
     }
 
     size_t arity = ARITY[term[0]];
     if (arity == 0) {
-        printf("%s", AGENTS[term[0]]);
+        fprintf(f, "%s", AGENTS[term[0]]);
         return;
     }
 
-    printf("%s(", AGENTS[term[0]]);
+    fprintf(f, "%s(", AGENTS[term[0]]);
     if (max_recursion > 0) {
         for (size_t i = 1; i <= arity; i++) {
-            print_term((size_t*) term[i], max_recursion - 1);
+            print_term(f, (size_t*) term[i], max_recursion - 1);
             if (i != arity) {
-                printf(", ");
+                fprintf(f, ", ");
             }
         }
     } else {
-        printf("...");
+        fprintf(f, "...");
     }
-    printf(")");
+    fprintf(f, ")");
 }
 
 void run() {
@@ -152,14 +171,16 @@ void run() {
 
     while (EQ_STACK_SIZE) {
         pop_equation(&left, &right);
+#ifdef ZZ_TIMING
         REDUCTIONS++;
+#endif
 
-#ifdef DEBUG
-        printf("equation: ");
-        print_term(left, 3);
-        printf(" = ");
-        print_term(right, 3);
-        printf("\n");
+#ifdef ZZ_TRACE
+        fprintf(stderr, "\x1b[90m");
+        print_term(stderr, left, 3);
+        fprintf(stderr, " = ");
+        print_term(stderr, right, 3);
+        fprintf(stderr, "\x1b[0m\n");
 #endif
 
         // Indirection
@@ -194,11 +215,11 @@ void run() {
                     continue;
                 }
             }
-            printf("error: no rule for ");
-            print_term(left, 3);
-            printf(" and ");
-            print_term(right, 3);
-            printf("\n");
+            fprintf(stderr, "error: no rule for ");
+            print_term(stderr, left, 3);
+            fprintf(stderr, " and ");
+            print_term(stderr, right, 3);
+            fprintf(stderr, "\n");
             exit(1);
         }
 
@@ -302,7 +323,9 @@ void init_rules() {{
             f,
             r#"
 int main() {{
+#ifdef ZZ_TIMING
     clock_t start = clock();
+#endif
 "#
         )?;
 
@@ -318,14 +341,15 @@ int main() {{
             r#"
 
     run();
-    print_term({interface}, 1000);
+    print_term(stdout, {interface}, 1000);
     printf("\n");
 
+#ifdef ZZ_TIMING
     clock_t end = clock();
     double time = (double) (end - start) / CLOCKS_PER_SEC;
     double reductions_per_second = (double) REDUCTIONS / time;
-
-    printf("\n[Reductions: %zu, CPU time: %f, R/s: %f]\n", REDUCTIONS, time, reductions_per_second);
+    fprintf(stderr, "\n[Reductions: %zu, CPU time: %f, R/s: %f]\n", REDUCTIONS, time, reductions_per_second);
+#endif
 
     return 0;
 }}

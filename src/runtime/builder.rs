@@ -83,6 +83,13 @@ impl RuntimeBuilder {
             rule_map,
         })
     }
+
+    /// 从 `Program` 构建运行时。
+    pub fn build_runtime(program: ast::Program) -> Result<ir::Program> {
+        let mut builder = Self::new();
+        builder.program(program)?;
+        builder.build()
+    }
 }
 
 struct GlobalBuilder {

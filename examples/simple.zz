@@ -1,0 +1,11 @@
+/*
+ * Calculate 2 + 1
+ */
+
+S(#x) >> Add(#y, @w) => #x -> Add(#y, @z), @w <- S(#z)
+Zero >> Add(#x, @y) => #x -> @y
+
+:: @two <- S(S(S(Zero)))
+:: #two -> Add(S(Zero), @result)
+
+$ = #result
