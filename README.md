@@ -42,29 +42,16 @@ S(S(S(S(Zero))))
 
 ## 用法
 
-```
-Usage: zamuza [OPTIONS] --file <FILE>
-
-Options:
-  -f, --file <FILE>              Source file, or pass "-" to read from stdin
-  -o, --output <OUTPUT>          Output file, or pass "-" to write to stdout, or pass nothing to execute directly
-  -s, --stack-size <STACK_SIZE>  Runtime stack size [default: 1024]
-      --trace                    Trace reduction
-      --timing                   Output timing information
-  -h, --help                     Print help
-  -V, --version                  Print version
-```
-
 解释执行：
 
 ```
-zamuza -f <FILE> [--trace] [--timing]
+zamuza run <FILE> [--stack-size X] [--trace] [--timing]
 ```
 
 编译为C语言：
 
 ```
-zamuza -f <FILE> -o <OUTPUT> [--trace] [--timing]
+zamuza compile <FILE> -o <OUTPUT> [--stack-size X] [--trace] [--timing]
 ```
 
 ## 教程
@@ -195,7 +182,7 @@ qsort (x:xs) =
 
 - [ ] 简单类型检查（输入/输出类型）
 - [ ] 将 Dup 和 Erase 实现为内置函数
-- [ ] 改进错误提示
+- [x] 改进错误提示
 - [ ] 编译器调试信息
 
 ## 参考
