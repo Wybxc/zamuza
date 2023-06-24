@@ -9,18 +9,65 @@
 //! - Rule：规则，由两个规则项和若干方程组成
 //! - Program：整个程序，由规则、方程和接口组成
 
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
+
+/// 位置信息片段
+#[derive(Debug, Clone, PartialEq)]
+pub struct Span<'a, T>
+where
+    T: 'a,
+{
+    inner: T,
+    span: pest::Span<'a>,
+}
+
+impl<'a, T: Display> Display for Span<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<'a, T> Deref for Span<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, T> AsRef<T> for Span<'a, T> {
+    fn as_ref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<'a, T> Span<'a, T> {
+    /// 创建一个新的 `Span`。
+    pub fn new(inner: T, span: pest::Span<'a>) -> Self {
+        Self { inner, span }
+    }
+
+    /// 获取位置信息。
+    pub fn span(&self) -> pest::Span<'a> {
+        self.span
+    }
+
+    /// 转换为内部类型。
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
 
 /// 变量名称
 #[derive(Debug, Clone, PartialEq)]
-pub enum Name {
+pub enum Name<'a> {
     /// 输入变量
-    In(String),
+    In(Span<'a, &'a str>),
     /// 输出变量
-    Out(String),
+    Out(Span<'a, &'a str>),
 }
 
-impl Display for Name {
+impl<'a> Display for Name<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Name::In(name) => write!(f, "#{}", name),
@@ -29,34 +76,26 @@ impl Display for Name {
     }
 }
 
-impl Name {
+impl<'a> Name<'a> {
     /// 获取变量名称
     pub fn as_name(&self) -> &str {
         match self {
-            Name::In(name) => name,
-            Name::Out(name) => name,
-        }
-    }
-
-    /// 获取变量名称
-    pub fn into_name(self) -> String {
-        match self {
-            Name::In(name) => name,
-            Name::Out(name) => name,
+            Name::In(name) => name.as_ref(),
+            Name::Out(name) => name.as_ref(),
         }
     }
 }
 
 /// 程序中的交互器
 #[derive(Debug, Clone, PartialEq)]
-pub struct Agent {
+pub struct Agent<'a> {
     /// 交互器名称
-    pub name: String,
+    pub name: Span<'a, &'a str>,
     /// 交互器体
-    pub body: Vec<Term>,
+    pub body: Vec<Term<'a>>,
 }
 
-impl Display for Agent {
+impl<'a> Display for Agent<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.body.is_empty() {
             write!(f, "{}", self.name)
@@ -77,14 +116,14 @@ impl Display for Agent {
 
 /// 程序中的项
 #[derive(Debug, Clone, PartialEq)]
-pub enum Term {
+pub enum Term<'a> {
     /// 名称
-    Name(Name),
+    Name(Span<'a, Name<'a>>),
     /// 交互器
-    Agent(Agent),
+    Agent(Span<'a, Agent<'a>>),
 }
 
-impl Display for Term {
+impl<'a> Display for Term<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Term::Name(name) => write!(f, "{}", name),
@@ -95,14 +134,14 @@ impl Display for Term {
 
 /// 程序中的方程
 #[derive(Debug, Clone, PartialEq)]
-pub struct Equation {
+pub struct Equation<'a> {
     /// 方程左侧
-    pub left: Term,
+    pub left: Term<'a>,
     /// 方程右侧
-    pub right: Term,
+    pub right: Term<'a>,
 }
 
-impl Display for Equation {
+impl<'a> Display for Equation<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} -> {}", self.left, self.right)
     }
@@ -110,14 +149,14 @@ impl Display for Equation {
 
 /// 规则中的项
 #[derive(Debug, Clone, PartialEq)]
-pub struct RuleTerm {
+pub struct RuleTerm<'a> {
     /// 交互器名称
-    pub agent: String,
+    pub agent: Span<'a, &'a str>,
     /// 交互器体
-    pub body: Vec<Name>,
+    pub body: Vec<Span<'a, Name<'a>>>,
 }
 
-impl Display for RuleTerm {
+impl<'a> Display for RuleTerm<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.body.is_empty() {
             write!(f, "{}", self.agent)
@@ -138,14 +177,14 @@ impl Display for RuleTerm {
 
 /// 规则项对
 #[derive(Debug, Clone, PartialEq)]
-pub struct RuleTermPair {
+pub struct RuleTermPair<'a> {
     /// 规则项对左侧
-    pub left: RuleTerm,
+    pub left: Span<'a, RuleTerm<'a>>,
     /// 规则项对右侧
-    pub right: RuleTerm,
+    pub right: Span<'a, RuleTerm<'a>>,
 }
 
-impl Display for RuleTermPair {
+impl<'a> Display for RuleTermPair<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} >> {}", self.left, self.right)
     }
@@ -153,48 +192,56 @@ impl Display for RuleTermPair {
 
 /// 程序中的规则
 #[derive(Debug, Clone, PartialEq)]
-pub struct Rule {
+pub struct Rule<'a> {
     /// 规则中的两个项
-    pub term_pair: RuleTermPair,
+    pub term_pair: Span<'a, RuleTermPair<'a>>,
     /// 规则中的方程
-    pub equations: Vec<Equation>,
+    pub equations: Vec<Span<'a, Equation<'a>>>,
 }
 
-impl Display for Rule {
+impl<'a> Display for Rule<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.term_pair)?;
-        if !self.equations.is_empty() {
-            write!(
-                f,
-                " => {}",
+        write!(
+            f,
+            "{} => {}",
+            self.term_pair,
+            if !self.equations.is_empty() {
                 self.equations
                     .iter()
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
-            )?;
-        }
+            } else {
+                "_".to_string()
+            }
+        )?;
+
         Ok(())
     }
 }
 
 /// 整个程序
 #[derive(Debug, Clone, PartialEq)]
-pub struct Program {
+pub struct Program<'a> {
+    /// 程序文件名
+    pub filename: &'a str,
+    /// 源代码
+    pub source: &'a str,
     /// 程序中的规则
-    pub rules: Vec<Rule>,
+    pub rules: Vec<Span<'a, Rule<'a>>>,
     /// 程序中的方程
-    pub net: Vec<Equation>,
+    pub equations: Vec<Span<'a, Equation<'a>>>,
     /// 程序的接口
-    pub interfaces: Vec<Term>,
+    pub interfaces: Vec<Term<'a>>,
 }
 
-impl Display for Program {
+impl<'a> Display for Program<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "/* {} */", self.filename)?;
         for rule in &self.rules {
             writeln!(f, "{}", rule)?;
         }
-        for equation in &self.net {
+        for equation in &self.equations {
             writeln!(f, "{}", equation)?;
         }
         for interface in &self.interfaces {

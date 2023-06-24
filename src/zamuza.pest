@@ -1,8 +1,9 @@
 Program = { SOI ~ (Rule | NetEquation | Interface)+ ~ EOI }
 
-Rule               = { (RuleTermsLeftRight | RuleTermsRightLeft) ~ "=>" ~ RuleEquations }
-RuleTermsLeftRight = { RuleTerm ~ ">>" ~ RuleTerm }
-RuleTermsRightLeft = { RuleTerm ~ "<<" ~ RuleTerm }
+Rule               = { RuleTermPair ~ "=>" ~ RuleEquations }
+RuleTermPair      = { RuleTermLeftRight | RuleTermRightLeft }
+RuleTermLeftRight = { RuleTerm ~ ">>" ~ RuleTerm }
+RuleTermRightLeft = { RuleTerm ~ "<<" ~ RuleTerm }
 RuleTerm           = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ ")")? }
 RuleEquations      = { "_" | Equation ~ (Comma ~ Equation)* }
 

@@ -120,7 +120,8 @@ size_t* new_name() {
 
 void push_equation(size_t* left, size_t* right) {
     if (EQ_STACK_SIZE >= MAX_STACK_SIZE) {
-        fprintf(stderr, "error: stack overflow\n");
+        fprintf(stderr, "\x1b[31merror\x1b[0m: stack overflow\n");
+        fprintf(stderr, "\x1b[33mhint\x1b[0m: try to increase the stack size with `--stack-size`\n");
         exit(1);
     }
     EQ_STACK[EQ_STACK_SIZE][0] = left;
@@ -215,7 +216,7 @@ void run() {
                     continue;
                 }
             }
-            fprintf(stderr, "error: no rule for ");
+            fprintf(stderr, "\x1b[31merror\x1b[0m: no rule for ");
             print_term(stderr, left, 3);
             fprintf(stderr, " and ");
             print_term(stderr, right, 3);

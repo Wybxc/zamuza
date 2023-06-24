@@ -1,12 +1,46 @@
 //! 解释运行
 
-use anyhow::{bail, Result};
 use colorized::{Color, Colors};
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
+use thiserror::Error;
 
 use crate::options::Options;
 
 use super::ir;
+
+/// 运行时错误。
+#[allow(missing_docs)]
+#[derive(Error, Debug)]
+pub enum RuntimeError {
+    #[error("no rule for {left} and {right}")]
+    RuleNotFound { left: String, right: String },
+
+    #[error("in function main: {0}")]
+    MainError(#[source] ExecutionError),
+
+    #[error("in rule {0}: {1}")]
+    RuleError(String, #[source] ExecutionError),
+}
+
+#[allow(missing_docs)]
+#[derive(Error, Debug)]
+pub enum ExecutionError {
+    #[error("invalid instruction: {0}")]
+    InvalidInstruction(String),
+
+    #[error("slot {slot} of agent {agent} is not found when executing instruction {inst}")]
+    SlotNotFound {
+        agent: String,
+        slot: usize,
+        inst: String,
+    },
+
+    #[error("local variable {local} is uninitialized or moved when executing instruction {inst}")]
+    UninitializedLocal { local: String, inst: String },
+
+    #[error("read slot of non-agent variable {var} when executing instruction {inst}")]
+    InvalidRead { var: String, inst: String },
+}
 
 /// 虚拟机。
 pub struct VM {
@@ -166,7 +200,7 @@ impl Runtime {
         self.equation_stack.push((lhs, rhs));
         if !self.overflowed && self.equation_stack.len() > self.max_stack_size {
             self.overflowed = true;
-            eprintln!("{}", "warning: stack overflow".color(Colors::YellowFg));
+            eprintln!("{}: stack overflow", "warning".color(Colors::YellowFg));
         }
     }
 
@@ -174,7 +208,7 @@ impl Runtime {
         self.equation_stack.pop()
     }
 
-    fn print_term(&self, term: &Term, max_recursion: usize) -> Result<String> {
+    fn print_term(&self, term: &Term, max_recursion: usize) -> String {
         let Term { id, slots } = term;
         let mut s = self.agents[id.0].name.clone();
         if !slots.is_empty() {
@@ -186,35 +220,35 @@ impl Runtime {
                 } else {
                     s.push_str(", ");
                 }
-                s.push_str(&self.print(slot, max_recursion - 1)?);
+                s.push_str(&self.print(slot, max_recursion - 1));
             }
             s.push(')');
         }
-        Ok(s)
+        s
     }
 
-    pub fn print_non_null(&self, value: &NonNullValue, max_recursion: usize) -> Result<String> {
+    pub fn print_non_null(&self, value: &NonNullValue, max_recursion: usize) -> String {
         if max_recursion == 0 {
-            return Ok("...".to_string());
+            return "...".to_string();
         }
         match value {
             NonNullValue::Term(term) => self.print_term(term, max_recursion),
             NonNullValue::Ref(r) => match &*r.borrow() {
-                Ref::Name(n) => Ok(format!("x{n}")),
+                Ref::Name(n) => format!("x{n}"),
                 Ref::Value(t) => self.print_non_null(t, max_recursion),
             },
         }
     }
 
-    pub fn print(&self, value: &Value, max_recursion: usize) -> Result<String> {
+    pub fn print(&self, value: &Value, max_recursion: usize) -> String {
         if max_recursion == 0 {
-            return Ok("...".to_string());
+            return "...".to_string();
         }
         match value {
             Value::Term(Some(term)) => self.print_term(term, max_recursion),
-            Value::Term(None) => Ok("?".to_string()),
+            Value::Term(None) => "?".to_string(),
             Value::Ref(r) => match &*r.borrow() {
-                Ref::Name(n) => Ok(format!("x{n}")),
+                Ref::Name(n) => format!("x{n}"),
                 Ref::Value(t) => self.print_non_null(t, max_recursion),
             },
         }
@@ -223,7 +257,7 @@ impl Runtime {
 
 impl VM {
     /// 运行虚拟机。
-    pub fn run(mut self) -> Result<()> {
+    pub fn run(mut self) -> Result<(), RuntimeError> {
         let start_time = Instant::now();
         let mut reductions = 0;
 
@@ -235,7 +269,7 @@ impl VM {
                 &self.main.initializers,
                 &self.main.instructions,
             )
-            .map_err(|e| anyhow::anyhow!("in function main: {:?}", e))?;
+            .map_err(RuntimeError::MainError)?;
 
         while let Some((lhs, rhs)) = self.runtime.pop_equation() {
             reductions += 1;
@@ -243,8 +277,8 @@ impl VM {
             if self.trace {
                 let trace = format!(
                     "{} = {}",
-                    self.runtime.print_non_null(&lhs, 3)?,
-                    self.runtime.print_non_null(&rhs, 3)?
+                    self.runtime.print_non_null(&lhs, 3),
+                    self.runtime.print_non_null(&rhs, 3)
                 )
                 .color(Colors::BrightBlackFg);
                 eprintln!("{trace}");
@@ -270,7 +304,7 @@ impl VM {
 
         for output in self.main.outputs {
             let output = main_frame.get(&output);
-            println!("{}", self.runtime.print(&output, 1000)?);
+            println!("{}", self.runtime.print(&output, 1000));
         }
 
         if self.timing {
@@ -298,7 +332,7 @@ impl VM {
         self.runtime.push_equation(value, rhs);
     }
 
-    fn reduce_interaction(&mut self, mut lhs: Term, mut rhs: Term) -> Result<()> {
+    fn reduce_interaction(&mut self, mut lhs: Term, mut rhs: Term) -> Result<(), RuntimeError> {
         let mut id_left = lhs.id;
         let mut id_right = rhs.id;
 
@@ -318,13 +352,12 @@ impl VM {
                     lhs,
                     rhs,
                 )
-                .map_err(|e| anyhow::anyhow!("in rule {}: {:?}", rule.index, e))?;
+                .map_err(|e| RuntimeError::RuleError(rule.description.clone(), e))?;
         } else {
-            bail!(
-                "runtime error: no rule for {} and {}",
-                self.runtime.print_term(&lhs, 3)?,
-                self.runtime.print_term(&rhs, 3)?
-            );
+            return Err(RuntimeError::RuleNotFound {
+                left: self.runtime.print_term(&lhs, 3),
+                right: self.runtime.print_term(&rhs, 3),
+            });
         }
         Ok(())
     }
@@ -357,7 +390,7 @@ impl StackFrame {
         &mut self,
         rt: &mut Runtime,
         initializers: &[ir::Initializer],
-    ) -> Result<()> {
+    ) -> Result<(), ExecutionError> {
         for initializer in initializers {
             match initializer {
                 ir::Initializer::Name { index } => {
@@ -368,7 +401,7 @@ impl StackFrame {
                     Self::prepare_index(&mut self.agents, *index);
                     self.agents[*index] = rt.new_agent(*id);
                 }
-                _ => bail!("runtime error: invalid instruction `{}`", initializer),
+                _ => return Err(ExecutionError::InvalidInstruction(initializer.to_string())),
             }
         }
         Ok(())
@@ -380,7 +413,7 @@ impl StackFrame {
         initializers: &[ir::Initializer],
         mut left: Term,
         mut right: Term,
-    ) -> Result<()> {
+    ) -> Result<(), ExecutionError> {
         for initializer in initializers {
             match initializer {
                 ir::Initializer::Name { index } => {
@@ -396,10 +429,11 @@ impl StackFrame {
                     if let Some(slot) = left.slot(*slot) {
                         self.slots[*index] = slot;
                     } else {
-                        bail!(
-                            "runtime error: slot {slot} not found in {left} [{initializer}]",
-                            left = rt.print_term(&left, 3)?
-                        )
+                        return Err(ExecutionError::SlotNotFound {
+                            agent: rt.print_term(&left, 3),
+                            slot: *slot,
+                            inst: initializer.to_string(),
+                        });
                     }
                 }
                 ir::Initializer::SlotFromRight { index, slot } => {
@@ -407,10 +441,11 @@ impl StackFrame {
                     if let Some(slot) = right.slot(*slot) {
                         self.slots[*index] = slot;
                     } else {
-                        bail!(
-                            "runtime error: slot {slot} not found in {right} [{initializer}]",
-                            right = rt.print_term(&right, 3)?
-                        )
+                        return Err(ExecutionError::SlotNotFound {
+                            agent: rt.print_term(&right, 3),
+                            slot: *slot,
+                            inst: initializer.to_string(),
+                        });
                     }
                 }
             }
@@ -422,7 +457,7 @@ impl StackFrame {
         &mut self,
         rt: &mut Runtime,
         instructions: &[ir::Instruction],
-    ) -> Result<()> {
+    ) -> Result<(), ExecutionError> {
         for instruction in instructions {
             match instruction {
                 ir::Instruction::SetSlot {
@@ -437,24 +472,39 @@ impl StackFrame {
                             if let Some(slot) = term.slot_mut(*slot) {
                                 *slot = value;
                             } else {
-                                bail!(
-                                "runtime error: slot {slot} not found in {target} (executing {instruction})",
-                                target = rt.print_term(term, 3)?,
-                            )
+                                return Err(ExecutionError::SlotNotFound {
+                                    agent: rt.print_term(term, 3),
+                                    slot: *slot,
+                                    inst: instruction.to_string(),
+                                });
                             }
                         }
-                        Value::Term(None) => bail!(
-                            "runtime error: {target} is uninitialized or moved (executing {instruction})",
-                        ),
-                        Value::Ref(_) => bail!("runtime error: read slot from non-agent {target}"),
+                        Value::Term(None) => {
+                            return Err(ExecutionError::UninitializedLocal {
+                                local: target.to_string(),
+                                inst: instruction.to_string(),
+                            })
+                        }
+                        Value::Ref(_) => {
+                            return Err(ExecutionError::InvalidRead {
+                                var: target.to_string(),
+                                inst: instruction.to_string(),
+                            })
+                        }
                     }
                 }
                 ir::Instruction::PushEquation { left, right, .. } => {
                     let left = self.get(left).try_into().map_err(|_| {
-                        anyhow::anyhow!("runtime error: {left} is uninitialized or moved (executing `{instruction}`)")
+                        ExecutionError::UninitializedLocal {
+                            local: left.to_string(),
+                            inst: instruction.to_string(),
+                        }
                     })?;
                     let right = self.get(right).try_into().map_err(|_| {
-                        anyhow::anyhow!("runtime error: {right} is uninitialized or moved (executing `{instruction}`)")
+                        ExecutionError::UninitializedLocal {
+                            local: right.to_string(),
+                            inst: instruction.to_string(),
+                        }
                     })?;
                     rt.push_equation(left, right);
                 }
@@ -468,7 +518,7 @@ impl StackFrame {
         rt: &mut Runtime,
         initializers: &[ir::Initializer],
         instructions: &[ir::Instruction],
-    ) -> Result<()> {
+    ) -> Result<(), ExecutionError> {
         self.execute_main_initializers(rt, initializers)?;
         self.execute_instructions(rt, instructions)?;
         Ok(())
@@ -481,7 +531,7 @@ impl StackFrame {
         instructions: &[ir::Instruction],
         lhs: Term,
         rhs: Term,
-    ) -> Result<()> {
+    ) -> Result<(), ExecutionError> {
         self.execute_initializers(rt, initializers, lhs, rhs)?;
         self.execute_instructions(rt, instructions)?;
         Ok(())

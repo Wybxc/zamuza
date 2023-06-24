@@ -53,10 +53,10 @@ impl RuntimeBuilder {
     /// 向运行时添加一个 `Program`。
     pub fn program(&mut self, program: ast::Program) -> Result<&mut Self> {
         for rule in program.rules {
-            self.rule(rule)?;
+            self.rule(rule.into_inner())?;
         }
-        for equation in program.net {
-            self.equation(equation)?;
+        for equation in program.equations {
+            self.equation(equation.into_inner())?;
         }
         for interface in program.interfaces {
             self.interface(interface)?;
@@ -179,10 +179,11 @@ impl FunctionBuilder {
         use ast::*;
         match term {
             Term::Name(name) => {
-                let term_name = self.add_or_get_name(&name.into_name());
+                let term_name = self.add_or_get_name(name.as_name());
                 Ok(term_name)
             }
-            Term::Agent(Agent { name, body }) => {
+            Term::Agent(agent) => {
+                let Agent { name, body } = agent.into_inner();
                 let agent_id = global.add_or_get_agent(&name, body.len())?;
                 let term_name = self.add_term(agent_id);
 
@@ -252,13 +253,13 @@ impl RulesBuilder {
     pub fn rule(&mut self, global: &mut GlobalBuilder, rule: ast::Rule) -> Result<&mut Self> {
         let description = rule.to_string();
         let ast::Rule {
-            term_pair:
-                ast::RuleTermPair {
-                    left: term1,
-                    right: term2,
-                },
+            term_pair,
             equations,
         } = rule;
+        let ast::RuleTermPair {
+            left: term1,
+            right: term2,
+        } = term_pair.into_inner();
 
         let mut rule = FunctionBuilder::default();
         let a1 = global.add_or_get_agent(&term1.agent, term1.body.len())?;
@@ -272,15 +273,15 @@ impl RulesBuilder {
             (term2, term1)
         };
 
-        for (i, name) in term_left.body.into_iter().enumerate() {
-            rule.slot(name.into_name(), ArgSlot::Left(i + 1));
+        for (i, name) in term_left.into_inner().body.into_iter().enumerate() {
+            rule.slot(name.as_name().to_string(), ArgSlot::Left(i + 1));
         }
-        for (i, name) in term_right.body.into_iter().enumerate() {
-            rule.slot(name.into_name(), ArgSlot::Right(i + 1));
+        for (i, name) in term_right.into_inner().body.into_iter().enumerate() {
+            rule.slot(name.as_name().to_string(), ArgSlot::Right(i + 1));
         }
 
         for equation in equations {
-            rule.equation(global, equation)?;
+            rule.equation(global, equation.into_inner())?;
         }
 
         let (initializers, instructions) = rule.build()?;
