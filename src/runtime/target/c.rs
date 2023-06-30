@@ -89,9 +89,10 @@ void run();
             f,
             r#"
 #define AGENT_COUNT {agents_count}
+#define NAME_COUNTER_START {agents_count}
 char* AGENTS[] = {{ {agents_names} }};
 size_t ARITY[] = {{ {agents_arity} }};
-size_t NAME_COUNTER = AGENT_COUNT;
+size_t NAME_COUNTER = NAME_COUNTER_START;
 "#
         )?;
 
