@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::options::Options;
 
-use super::ir;
+use super::{AgentId, AgentMeta, Initializer, Instruction, Local, Main, Program, Rule};
 
 /// 运行时错误。
 #[allow(missing_docs)]
@@ -47,9 +47,9 @@ pub struct VM {
     /// Runtime.
     runtime: Runtime,
     /// Rule map.
-    rule_map: HashMap<(ir::AgentId, ir::AgentId), ir::Rule>,
+    rule_map: HashMap<(AgentId, AgentId), Rule>,
     /// Main function.
-    main: ir::Main,
+    main: Main,
     /// Enable tracing.
     trace: bool,
     /// Print timing information.
@@ -58,7 +58,7 @@ pub struct VM {
 
 struct Runtime {
     /// The agents.
-    agents: Vec<ir::AgentMeta>,
+    agents: Vec<AgentMeta>,
     /// Name counter.
     name_counter: usize,
     /// Equation stack.
@@ -70,7 +70,7 @@ struct Runtime {
 
 impl VM {
     /// 从 IR 构建虚拟机。
-    pub fn new(program: ir::Program, options: &Options) -> Self {
+    pub fn new(program: Program, options: &Options) -> Self {
         let agents = program.agents;
 
         let mut rules = program
@@ -116,7 +116,7 @@ impl StackFrame {
 }
 
 struct Term {
-    id: ir::AgentId,
+    id: AgentId,
     slots: Vec<Value>,
 }
 
@@ -167,7 +167,7 @@ impl TryFrom<Value> for NonNullValue {
 }
 
 impl Value {
-    pub fn new_agent(id: ir::AgentId, slots: Vec<Value>) -> Value {
+    pub fn new_agent(id: AgentId, slots: Vec<Value>) -> Value {
         Self::Term(Some(Term { id, slots }))
     }
 
@@ -184,7 +184,7 @@ impl Value {
 }
 
 impl Runtime {
-    pub fn new_agent(&self, agent_id: ir::AgentId) -> Value {
+    pub fn new_agent(&self, agent_id: AgentId) -> Value {
         let arity = self.agents[agent_id.0].arity;
         let mut slots = Vec::with_capacity(arity);
         slots.resize_with(arity, || Value::Term(None));
@@ -370,34 +370,34 @@ impl StackFrame {
         }
     }
 
-    fn get(&mut self, local: &ir::Local) -> Value {
+    fn get(&mut self, local: &Local) -> Value {
         match local {
-            ir::Local::Name(index) => self.names[*index].take(),
-            ir::Local::Agent(index) => self.agents[*index].take(),
-            ir::Local::Slot(index) => self.slots[*index].take(),
+            Local::Name(index) => self.names[*index].take(),
+            Local::Agent(index) => self.agents[*index].take(),
+            Local::Slot(index) => self.slots[*index].take(),
         }
     }
 
-    fn get_mut(&mut self, local: &ir::Local) -> &mut Value {
+    fn get_mut(&mut self, local: &Local) -> &mut Value {
         match local {
-            ir::Local::Name(index) => &mut self.names[*index],
-            ir::Local::Agent(index) => &mut self.agents[*index],
-            ir::Local::Slot(index) => &mut self.slots[*index],
+            Local::Name(index) => &mut self.names[*index],
+            Local::Agent(index) => &mut self.agents[*index],
+            Local::Slot(index) => &mut self.slots[*index],
         }
     }
 
     fn execute_main_initializers(
         &mut self,
         rt: &mut Runtime,
-        initializers: &[ir::Initializer],
+        initializers: &[Initializer],
     ) -> Result<(), ExecutionError> {
         for initializer in initializers {
             match initializer {
-                ir::Initializer::Name { index } => {
+                Initializer::Name { index } => {
                     Self::prepare_index(&mut self.names, *index);
                     self.names[*index] = rt.new_name();
                 }
-                ir::Initializer::Agent { index, id } => {
+                Initializer::Agent { index, id } => {
                     Self::prepare_index(&mut self.agents, *index);
                     self.agents[*index] = rt.new_agent(*id);
                 }
@@ -410,21 +410,21 @@ impl StackFrame {
     fn execute_initializers(
         &mut self,
         rt: &mut Runtime,
-        initializers: &[ir::Initializer],
+        initializers: &[Initializer],
         mut left: Term,
         mut right: Term,
     ) -> Result<(), ExecutionError> {
         for initializer in initializers {
             match initializer {
-                ir::Initializer::Name { index } => {
+                Initializer::Name { index } => {
                     Self::prepare_index(&mut self.names, *index);
                     self.names[*index] = rt.new_name();
                 }
-                ir::Initializer::Agent { index, id } => {
+                Initializer::Agent { index, id } => {
                     Self::prepare_index(&mut self.agents, *index);
                     self.agents[*index] = rt.new_agent(*id);
                 }
-                ir::Initializer::SlotFromLeft { index, slot } => {
+                Initializer::SlotFromLeft { index, slot } => {
                     Self::prepare_index(&mut self.slots, *index);
                     if let Some(slot) = left.slot(*slot) {
                         self.slots[*index] = slot;
@@ -436,7 +436,7 @@ impl StackFrame {
                         });
                     }
                 }
-                ir::Initializer::SlotFromRight { index, slot } => {
+                Initializer::SlotFromRight { index, slot } => {
                     Self::prepare_index(&mut self.slots, *index);
                     if let Some(slot) = right.slot(*slot) {
                         self.slots[*index] = slot;
@@ -456,11 +456,11 @@ impl StackFrame {
     fn execute_instructions(
         &mut self,
         rt: &mut Runtime,
-        instructions: &[ir::Instruction],
+        instructions: &[Instruction],
     ) -> Result<(), ExecutionError> {
         for instruction in instructions {
             match instruction {
-                ir::Instruction::SetSlot {
+                Instruction::SetSlot {
                     target,
                     slot,
                     value,
@@ -493,7 +493,7 @@ impl StackFrame {
                         }
                     }
                 }
-                ir::Instruction::PushEquation { left, right, .. } => {
+                Instruction::PushEquation { left, right, .. } => {
                     let left = self.get(left).try_into().map_err(|_| {
                         ExecutionError::UninitializedLocal {
                             local: left.to_string(),
@@ -516,8 +516,8 @@ impl StackFrame {
     pub fn execute_main(
         &mut self,
         rt: &mut Runtime,
-        initializers: &[ir::Initializer],
-        instructions: &[ir::Instruction],
+        initializers: &[Initializer],
+        instructions: &[Instruction],
     ) -> Result<(), ExecutionError> {
         self.execute_main_initializers(rt, initializers)?;
         self.execute_instructions(rt, instructions)?;
@@ -527,8 +527,8 @@ impl StackFrame {
     pub fn execute(
         &mut self,
         rt: &mut Runtime,
-        initializers: &[ir::Initializer],
-        instructions: &[ir::Instruction],
+        initializers: &[Initializer],
+        instructions: &[Instruction],
         lhs: Term,
         rhs: Term,
     ) -> Result<(), ExecutionError> {

@@ -2,15 +2,16 @@
 
 use anyhow::Result;
 
-use crate::options::Options;
-
-use super::ir;
+use crate::{
+    options::Options,
+    runtime::{AgentId, AgentMeta, Initializer, Instruction, Main, Program, Rule},
+};
 
 /// 编译到 C 语言的运行时
 pub struct C;
 
 impl super::Target for C {
-    fn write(mut f: impl std::io::Write, program: ir::Program, options: &Options) -> Result<()> {
+    fn write(mut f: impl std::io::Write, program: Program, options: &Options) -> Result<()> {
         Self::write_includes(&mut f, options)?;
         Self::write_prelude(&mut f, options)?;
         Self::write_global(&mut f, program.agents)?;
@@ -71,7 +72,7 @@ void run();
         Ok(())
     }
 
-    fn write_global(mut f: impl std::io::Write, agents: Vec<ir::AgentMeta>) -> Result<()> {
+    fn write_global(mut f: impl std::io::Write, agents: Vec<AgentMeta>) -> Result<()> {
         let agents_count = agents.len();
         let agents_arity = agents
             .iter()
@@ -245,7 +246,7 @@ void run() {
         Ok(())
     }
 
-    fn write_rule(mut f: impl std::io::Write, rule: ir::Rule) -> Result<()> {
+    fn write_rule(mut f: impl std::io::Write, rule: Rule) -> Result<()> {
         write!(
             f,
             r#"
@@ -268,32 +269,32 @@ void rule_{index}(size_t* left, size_t* right) {{
         Ok(())
     }
 
-    fn write_initializer(mut f: impl std::io::Write, initializer: ir::Initializer) -> Result<()> {
+    fn write_initializer(mut f: impl std::io::Write, initializer: Initializer) -> Result<()> {
         match initializer {
-            ir::Initializer::Name { index } => {
+            Initializer::Name { index } => {
                 writeln!(f, "    size_t* x{index} = new_name();")?;
             }
-            ir::Initializer::Agent { index, id } => {
+            Initializer::Agent { index, id } => {
                 writeln!(f, "    size_t* a{index} = new_agent({id});")?
             }
-            ir::Initializer::SlotFromLeft { index, slot } => {
+            Initializer::SlotFromLeft { index, slot } => {
                 writeln!(f, "    size_t* s{index} = (size_t*) left[{slot}];",)?
             }
-            ir::Initializer::SlotFromRight { index, slot } => {
+            Initializer::SlotFromRight { index, slot } => {
                 writeln!(f, "    size_t* s{index} = (size_t*) right[{slot}];",)?
             }
         }
         Ok(())
     }
 
-    fn write_instruction(mut f: impl std::io::Write, instruction: ir::Instruction) -> Result<()> {
+    fn write_instruction(mut f: impl std::io::Write, instruction: Instruction) -> Result<()> {
         match instruction {
-            ir::Instruction::SetSlot {
+            Instruction::SetSlot {
                 target,
                 slot,
                 value,
             } => writeln!(f, "    {target}[{slot}] = (size_t) {value};")?,
-            ir::Instruction::PushEquation {
+            Instruction::PushEquation {
                 left,
                 right,
                 description,
@@ -304,7 +305,7 @@ void rule_{index}(size_t* left, size_t* right) {{
 
     fn write_rule_map(
         mut f: impl std::io::Write,
-        rule_map: Vec<(ir::AgentId, ir::AgentId, usize)>,
+        rule_map: Vec<(AgentId, AgentId, usize)>,
     ) -> Result<()> {
         write!(
             f,
@@ -320,7 +321,7 @@ void init_rules() {{
         Ok(())
     }
 
-    fn write_main(mut f: impl std::io::Write, main: ir::Main) -> Result<()> {
+    fn write_main(mut f: impl std::io::Write, main: Main) -> Result<()> {
         write!(
             f,
             r#"

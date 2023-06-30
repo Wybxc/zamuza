@@ -2,8 +2,9 @@
 
 use anyhow::{bail, Result};
 
-use super::ir;
 use crate::ast;
+
+use super::{AgentId, AgentMeta, Initializer, Instruction, Local, Main, Program, Rule};
 
 struct Name(pub String);
 
@@ -16,7 +17,7 @@ enum ArgSlot {
 #[derive(Default)]
 pub struct RuntimeBuilder {
     global: GlobalBuilder,
-    interfaces: Vec<ir::Local>,
+    interfaces: Vec<Local>,
     rules: RulesBuilder,
     main: FunctionBuilder,
 }
@@ -27,7 +28,7 @@ impl RuntimeBuilder {
         Default::default()
     }
 
-    fn term(&mut self, term: ast::Term) -> Result<ir::Local> {
+    fn term(&mut self, term: ast::Term) -> Result<Local> {
         self.main.term(&mut self.global, term)
     }
 
@@ -65,9 +66,9 @@ impl RuntimeBuilder {
     }
 
     /// 构建运行时。
-    pub fn build(self) -> Result<ir::Program> {
+    pub fn build(self) -> Result<Program> {
         let main = self.main.build()?;
-        let main = ir::Main {
+        let main = Main {
             initializers: main.0,
             instructions: main.1,
             outputs: self.interfaces,
@@ -76,7 +77,7 @@ impl RuntimeBuilder {
         let agent_metas = self.global.build();
         let (rules, rule_map) = self.rules.build();
 
-        Ok(ir::Program {
+        Ok(Program {
             agents: agent_metas,
             main,
             rules,
@@ -85,7 +86,7 @@ impl RuntimeBuilder {
     }
 
     /// 从 `Program` 构建运行时。
-    pub fn build_runtime(program: ast::Program) -> Result<ir::Program> {
+    pub fn build_runtime(program: ast::Program) -> Result<Program> {
         let mut builder = Self::new();
         builder.program(program)?;
         builder.build()
@@ -93,39 +94,38 @@ impl RuntimeBuilder {
 }
 
 struct GlobalBuilder {
-    agents: Vec<ir::AgentMeta>,
+    agents: Vec<AgentMeta>,
 }
 
 impl Default for GlobalBuilder {
     fn default() -> Self {
         Self {
-            agents: vec![ir::AgentMeta::new("$", 1)],
+            agents: vec![AgentMeta::new("$", 1)],
         }
     }
 }
 
 impl GlobalBuilder {
-    pub fn add_or_get_agent(&mut self, name: &str, arity: usize) -> Result<ir::AgentId> {
+    pub fn add_or_get_agent(&mut self, name: &str, arity: usize) -> Result<AgentId> {
         match self
             .agents
             .iter()
             .enumerate()
-            .find_map(|(id, ir::AgentMeta { name: n, arity })| {
-                Some((id, arity)).filter(|_| n == name)
-            }) {
-            Some((id, a)) if *a == arity => Ok(ir::AgentId(id)),
+            .find_map(|(id, AgentMeta { name: n, arity })| Some((id, arity)).filter(|_| n == name))
+        {
+            Some((id, a)) if *a == arity => Ok(AgentId(id)),
             Some((_, a)) => {
                 bail!("agent `{}` has arity {}, but {} is given", name, a, arity)
             }
             None => {
                 let id = self.agents.len();
-                self.agents.push(ir::AgentMeta::new(name, arity));
-                Ok(ir::AgentId(id))
+                self.agents.push(AgentMeta::new(name, arity));
+                Ok(AgentId(id))
             }
         }
     }
 
-    pub fn build(self) -> Vec<ir::AgentMeta> {
+    pub fn build(self) -> Vec<AgentMeta> {
         self.agents
     }
 }
@@ -134,8 +134,8 @@ impl GlobalBuilder {
 struct FunctionBuilder {
     arguments: Vec<(Name, ArgSlot)>,
     names: Vec<Name>,
-    terms: Vec<ir::AgentId>,
-    body: Vec<ir::Instruction>,
+    terms: Vec<AgentId>,
+    body: Vec<Instruction>,
 }
 
 impl FunctionBuilder {
@@ -144,14 +144,14 @@ impl FunctionBuilder {
         self
     }
 
-    fn add_or_get_name(&mut self, name: &str) -> ir::Local {
+    fn add_or_get_name(&mut self, name: &str) -> Local {
         if let Some(id) = self
             .arguments
             .iter()
             .enumerate()
             .find_map(|(id, (Name(n), _))| Some(id).filter(|_| *n == name))
         {
-            return ir::Local::Slot(id);
+            return Local::Slot(id);
         }
         let id = match self
             .names
@@ -166,16 +166,16 @@ impl FunctionBuilder {
                 id
             }
         };
-        ir::Local::Name(id)
+        Local::Name(id)
     }
 
-    fn add_term(&mut self, agent_id: ir::AgentId) -> ir::Local {
+    fn add_term(&mut self, agent_id: AgentId) -> Local {
         let id = self.terms.len();
         self.terms.push(agent_id);
-        ir::Local::Agent(id)
+        Local::Agent(id)
     }
 
-    pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<ir::Local> {
+    pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
         use ast::*;
         match term {
             Term::Name(name) => {
@@ -189,7 +189,7 @@ impl FunctionBuilder {
 
                 for (i, term) in body.into_iter().enumerate() {
                     let sub_name = self.term(global, term)?;
-                    self.body.push(ir::Instruction::SetSlot {
+                    self.body.push(Instruction::SetSlot {
                         target: term_name,
                         slot: i + 1,
                         value: sub_name,
@@ -210,7 +210,7 @@ impl FunctionBuilder {
         let ast::Equation { left, right } = equation;
         let left_name = self.term(global, left)?;
         let right_name = self.term(global, right)?;
-        self.body.push(ir::Instruction::PushEquation {
+        self.body.push(Instruction::PushEquation {
             left: left_name,
             right: right_name,
             description,
@@ -218,25 +218,25 @@ impl FunctionBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<(Vec<ir::Initializer>, Vec<ir::Instruction>)> {
+    pub fn build(self) -> Result<(Vec<Initializer>, Vec<Instruction>)> {
         let arguments =
             self.arguments
                 .into_iter()
                 .enumerate()
                 .map(|(index, (_, slot))| match slot {
-                    ArgSlot::Left(slot) => ir::Initializer::SlotFromLeft { index, slot },
-                    ArgSlot::Right(slot) => ir::Initializer::SlotFromRight { index, slot },
+                    ArgSlot::Left(slot) => Initializer::SlotFromLeft { index, slot },
+                    ArgSlot::Right(slot) => Initializer::SlotFromRight { index, slot },
                 });
         let names = self
             .names
             .into_iter()
             .enumerate()
-            .map(|(index, _)| ir::Initializer::Name { index });
+            .map(|(index, _)| Initializer::Name { index });
         let terms = self
             .terms
             .into_iter()
             .enumerate()
-            .map(|(index, id)| ir::Initializer::Agent { index, id });
+            .map(|(index, id)| Initializer::Agent { index, id });
         let initailizers = arguments.chain(names).chain(terms).collect::<Vec<_>>();
 
         Ok((initailizers, self.body))
@@ -245,8 +245,8 @@ impl FunctionBuilder {
 
 #[derive(Default)]
 struct RulesBuilder {
-    rules: Vec<ir::Rule>,
-    rule_map: Vec<(ir::AgentId, ir::AgentId, usize)>,
+    rules: Vec<Rule>,
+    rule_map: Vec<(AgentId, AgentId, usize)>,
 }
 
 impl RulesBuilder {
@@ -286,7 +286,7 @@ impl RulesBuilder {
 
         let (initializers, instructions) = rule.build()?;
         let index = self.rules.len();
-        self.rules.push(ir::Rule {
+        self.rules.push(Rule {
             index,
             description,
             initializers,
@@ -297,7 +297,7 @@ impl RulesBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> (Vec<ir::Rule>, Vec<(ir::AgentId, ir::AgentId, usize)>) {
+    pub fn build(self) -> (Vec<Rule>, Vec<(AgentId, AgentId, usize)>) {
         (self.rules, self.rule_map)
     }
 }

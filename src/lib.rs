@@ -47,7 +47,7 @@ pub fn execute(source: &str, filename: &str, options: &Options) -> Result<()> {
         Ok(program) => program,
         Err(snippet) => anyhow::bail!("{}", snippet),
     };
-    
+
     if let Err(e) = check::check_program(&program) {
         anyhow::bail!("{}", e.to_snippet(source, filename));
     }
