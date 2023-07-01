@@ -1,0 +1,122 @@
+#################################################################
+## Iro
+################################################################ 
+##
+## * Press Ctrl + '+'/'-' To Zoom in
+## * Press Ctrl + S to save and recalculate... 
+## * Documents are saved to web storage.
+## * Only one save slot supported.
+## * Matches cannot span lines.
+## * Unicode chars must be defined in \u0000 to \uffff format.
+## * All matches must be contained by a single group ( ... )
+## * Look behinds not permitted, (?<= or (?<!
+## * Look forwards are permitted (?= or (?!
+## * Constants are defined as __my_const = (......)
+## * The \= format allows unescaped regular expressions
+## * Constants referenced by match \= $${__my_const}
+## * Constants can reference other constants
+## * You are free to delete all the default scopes.
+## * Twitter : ainslec , Web: http://eeyo.io/iro
+##
+################################################################
+
+name                   = zamuza
+file_extensions []     = zz;
+
+__NAME \= [_a-zA-Z][_0-9a-zA-Z]*'*
+
+################################################################
+## Styles
+################################################################
+
+styles [] {
+
+.comment : style {
+   color                 = grey
+   italic                = true
+   textmate_scope        = comment
+}
+
+.variable     : style {
+   color                = light_blue
+   textmate_scope       = variable
+}
+
+.const     : style {
+   color                = light_green
+   textmate_scope       = entity.name.class
+}
+
+.punct : style {
+   color                 = red_2
+   ace_scope             = punctuation
+   textmate_scope        = punctuation
+   pygments_scope        = Punctuation
+}
+
+.none : style {
+   color                = white
+}
+
+}
+
+#################################################
+## Parse contexts
+#################################################
+
+contexts [] {
+
+##############################################
+## Main Context - Entry point context
+##############################################
+
+main : context {
+   : pattern  {
+      regex \= ($${__NAME})
+      styles[] = .const;
+   }
+   : include "name";
+   : include "punct";
+   : include "comment";
+}
+
+name: context {
+   : inline_push {
+      regex \= ((#|@)[_a-zA-Z])
+      styles[] = .variable;
+      : pop {
+         regex \= (?:([^0-9a-zA-Z']|$))
+         styles[] = .none;
+      }
+      : pattern {
+         regex \= ([_0-9a-zA-Z]*'*)
+         styles[] = .variable;
+      }
+   }
+}
+
+punct: context {
+   : pattern {
+      regex \= (>>|<<|->|<-)
+      styles[] = .punct;
+   }
+}
+
+###########################################
+## Multi Line Comment Context
+###########################################
+
+comment : context {
+   description        = comment
+   : inline_push {
+      regex          \= (/\*)
+      default_style   = .comment
+      styles []       = .comment;
+      : pop {
+         regex       \= (\*/)
+         styles []    = .comment;
+      }
+   }
+}
+   
+}

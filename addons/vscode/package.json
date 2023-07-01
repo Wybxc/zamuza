@@ -1,0 +1,25 @@
+{
+  "name": "zamuza-syntax-highlight",
+  "displayName": "zamuza-syntax-highlight",
+  "description": "VSCode Language Support for the Zamuza language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.39.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "zamuza",
+      "aliases": ["zamuza", "zamuza"],
+      "extensions": [".zz"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "zamuza",
+      "scopeName": "source.zamuza",
+      "path": "./syntaxes/zamuza.tmLanguage"
+    }]
+  }
+}
