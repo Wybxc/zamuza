@@ -5,7 +5,6 @@ use std::fmt::Display;
 
 pub mod builder;
 pub mod target;
-pub mod vm;
 
 pub use builder::RuntimeBuilder;
 
@@ -229,5 +228,14 @@ impl Program {
     /// Write the program to a target.
     pub fn write<T: Target>(self, f: impl std::io::Write, options: &Options) -> Result<()> {
         T::write(f, self, options)
+    }
+
+    /// Write the program to a file.
+    pub fn write_to_file<T: Target>(
+        self,
+        path: impl AsRef<std::path::Path>,
+        options: &Options,
+    ) -> Result<()> {
+        T::write_to_file(path, self, options)
     }
 }

@@ -34,7 +34,7 @@ $ = #result
 保存为 `example.zz`，然后运行：
 
 ```bash
-$ zamuza -f example.zz --timing
+$ zamuza run example.zz --timing
 S(S(S(S(Zero))))
 
 [Reductions: 62, CPU time: 0.000125, R/s: 496000.000000]
@@ -42,16 +42,22 @@ S(S(S(S(Zero))))
 
 ## 用法
 
-解释执行：
+运行：
 
 ```
 zamuza run <FILE> [--stack-size X] [--trace] [--timing]
 ```
 
-编译为C语言：
+编译：
 
 ```
 zamuza compile <FILE> -o <OUTPUT> [--stack-size X] [--trace] [--timing]
+```
+
+编译为C语言：
+
+```
+zamuza compile <FILE> -o <OUTPUT> -f c [--stack-size X] [--trace] [--timing]
 ```
 
 ## 教程

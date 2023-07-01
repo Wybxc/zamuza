@@ -1,6 +1,7 @@
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::io::Read;
+use zamuza::runtime::target;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -30,11 +31,23 @@ enum Commands {
 
         /// Output file, pass "-" to write to stdout
         #[clap(short, long, value_parser)]
-        output: clio::Output,
+        output: clio::ClioPath,
+
+        /// Output format
+        #[clap(short, long, default_value = "exe")]
+        format: OutputFormat,
 
         #[clap(flatten)]
         options: Options,
     },
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum OutputFormat {
+    /// C
+    C,
+    /// Executable
+    Exe,
 }
 
 #[derive(Args)]
@@ -80,11 +93,12 @@ fn main() -> Result<()> {
             let mut program = String::new();
             input.read_to_string(&mut program)?;
 
-            zamuza::execute(&program, &filename, &options.into())?;
+            zamuza::run(&program, &filename, &options.into())?;
         }
         Commands::Compile {
             mut input,
             output,
+            format,
             options,
         } => {
             let filename = get_filename(&input);
@@ -92,7 +106,37 @@ fn main() -> Result<()> {
             let mut program = String::new();
             input.read_to_string(&mut program)?;
 
-            zamuza::compile(&program, &filename, output, &options.into())?;
+            if output.is_file() {
+                // write to file
+                match format {
+                    OutputFormat::Exe => zamuza::compile_to_file::<target::Exe>(
+                        &program,
+                        &filename,
+                        output.as_os_str(),
+                        &options.into(),
+                    )?,
+                    OutputFormat::C => zamuza::compile_to_file::<target::C>(
+                        &program,
+                        &filename,
+                        output.as_os_str(),
+                        &options.into(),
+                    )?,
+                }
+            } else {
+                // write to stream
+                let output = output.create()?;
+                match format {
+                    OutputFormat::Exe => zamuza::compile::<target::Exe>(
+                        &program,
+                        &filename,
+                        output,
+                        &options.into(),
+                    )?,
+                    OutputFormat::C => {
+                        zamuza::compile::<target::C>(&program, &filename, output, &options.into())?
+                    }
+                }
+            }
         }
     };
 

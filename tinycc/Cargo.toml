@@ -1,0 +1,10 @@
+[package]
+name = "tinycc"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+description = "Rust bindings to Tiny C Compiler"
+authors = ["Wybxc <wybxc@qq.com>"]
+
+[dependencies]
+thiserror = "1.0"

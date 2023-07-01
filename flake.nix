@@ -27,6 +27,33 @@
           cargo = toolchain;
           rustc = toolchain;
         };
+
+        buildInputs = [ pkgs.tinycc ] ++ optionals pkgs.stdenv.isDarwin [
+          pkgs.darwin.apple_sdk.frameworks.CoreServices
+        ];
+
+        pest-ide-tools = rustPlatform.buildRustPackage
+          rec {
+            pname = "pest-ide-tools";
+            version = "v0.3.2";
+
+            src = pkgs.fetchFromGitHub {
+              owner = "pest-parser";
+              repo = pname;
+              rev = version;
+              hash = "sha256-hnTXxzp4k6CqSwLijD+hNmag0qDO1S2Pf1GdW0AfbzA=";
+            };
+
+            cargoLock.lockFile = src + "/Cargo.lock";
+
+            nativeBuildInputs = [ pkgs.pkg-config pkgs.installShellFiles ];
+
+            buildInputs = [
+              pkgs.openssl
+            ] ++ optionals pkgs.stdenv.isDarwin [
+              pkgs.darwin.apple_sdk.frameworks.CoreServices
+            ];
+          };
       in
       rec {
         packages.default = rustPlatform.buildRustPackage
@@ -42,9 +69,7 @@
               pkgs.installShellFiles
             ];
 
-            buildInputs = optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk.frameworks.CoreServices
-            ];
+            buildInputs = buildInputs;
           };
 
         checks.default = packages.default;
@@ -59,36 +84,10 @@
             ])
             fenixPkgs.rust-analyzer
 
-            (rustPlatform.buildRustPackage
-              rec {
-                pname = "pest-ide-tools";
-                version = "v0.3.2";
+            pest-ide-tools
+          ] ++ optionals (!pkgs.stdenv.isDarwin) [ pkgs.gdb ];
 
-                src = pkgs.fetchFromGitHub {
-                  owner = "pest-parser";
-                  repo = pname;
-                  rev = version;
-                  hash = "sha256-hnTXxzp4k6CqSwLijD+hNmag0qDO1S2Pf1GdW0AfbzA=";
-                };
-
-                cargoLock.lockFile = src + "/Cargo.lock";
-
-                nativeBuildInputs = [ pkgs.pkg-config pkgs.installShellFiles ];
-
-                buildInputs = [
-                  pkgs.openssl
-                ] ++ optionals pkgs.stdenv.isDarwin [
-                  pkgs.darwin.apple_sdk.frameworks.CoreServices
-                ];
-              })
-          ] ++ optionals (!pkgs.stdenv.isDarwin) [
-            pkgs.gdb
-          ];
-
-          buildInputs = optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.CoreServices
-            pkgs.libiconv
-          ];
+          buildInputs = buildInputs;
 
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
         };

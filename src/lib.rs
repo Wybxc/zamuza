@@ -16,13 +16,12 @@ pub mod runtime;
 pub(crate) mod utils;
 
 use anyhow::Result;
-use colorized::{Color, Colors};
 use options::Options;
-use runtime::vm::VM;
+use runtime::target::{self, Target};
 use runtime::RuntimeBuilder;
 
 /// Compile a program to a runtime.
-pub fn compile(
+pub fn compile<T: Target>(
     source: &str,
     filename: &str,
     output: impl std::io::Write,
@@ -38,11 +37,16 @@ pub fn compile(
     }
 
     let runtime = RuntimeBuilder::build_runtime(program)?;
-    runtime.write::<runtime::target::C>(output, options)
+    runtime.write::<T>(output, options)
 }
 
-/// Execute a program.
-pub fn execute(source: &str, filename: &str, options: &Options) -> Result<()> {
+/// Compile a program to a runtime and write it to a file.
+pub fn compile_to_file<T: Target>(
+    source: &str,
+    filename: &str,
+    output: impl AsRef<std::path::Path>,
+    options: &Options,
+) -> Result<()> {
     let program = match parser::parse(source, filename) {
         Ok(program) => program,
         Err(snippet) => anyhow::bail!("{}", snippet),
@@ -53,10 +57,18 @@ pub fn execute(source: &str, filename: &str, options: &Options) -> Result<()> {
     }
 
     let runtime = RuntimeBuilder::build_runtime(program)?;
-    let vm = VM::new(runtime, options);
-    if let Err(e) = vm.run() {
-        eprintln!("{}: {}", "error".color(Colors::RedFg), e);
-        std::process::exit(1);
-    }
+    runtime.write_to_file::<T>(output, options)
+}
+
+/// Run a program.
+pub fn run(source: &str, filename: &str, options: &Options) -> Result<()> {
+    let mut output = std::io::Cursor::new(Vec::new());
+    compile::<target::C>(source, filename, &mut output, options)?;
+    let output = std::ffi::CString::new(output.into_inner())?;
+
+    tinycc::Context::new(tinycc::OutputType::Memory)?
+        .compile_string(&output)?
+        .run(&[])?;
+
     Ok(())
 }
