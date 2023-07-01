@@ -39,6 +39,9 @@ pub enum TypeError<'a> {
 
     #[error("input-output balance error")]
     MisdirectedOutput { name: &'a Span<'a, ast::Name<'a>> },
+
+    #[error("no main function")]
+    NoMainFunction,
 }
 
 impl<'a> TypeError<'a> {
@@ -55,6 +58,7 @@ impl<'a> TypeError<'a> {
             TypeError::MultipleTimesAsOutput { name } => name.span(),
             TypeError::MisdirectedInput { name } => name.span(),
             TypeError::MisdirectedOutput { name } => name.span(),
+            TypeError::NoMainFunction => pest::Span::new(source, 0, 0).unwrap(),
         }
     }
 
@@ -93,6 +97,11 @@ impl<'a> TypeError<'a> {
             TypeError::MisdirectedOutput { name } => vec![(
                 name.span(),
                 "appears as output, where it should be input",
+                AnnotationType::Error,
+            )],
+            TypeError::NoMainFunction => vec![(
+                pest::Span::new("", 0, 0).unwrap(),
+                "no main function",
                 AnnotationType::Error,
             )],
         }
@@ -210,13 +219,13 @@ pub fn check_rule_variables<'a>(rule: &'a ast::Rule) -> Result<(), TypeError<'a>
 }
 
 /// 网络中，所有变量必须恰好出现两次
-pub fn check_net_variables<'a>(program: &'a ast::Program) -> Result<(), TypeError<'a>> {
+pub fn check_net_variables<'a>(net: &'a ast::Net) -> Result<(), TypeError<'a>> {
     let mut names = HashMap::new();
-    for equation in &program.equations {
+    for equation in &net.equations {
         count_names(&equation.left, &mut names);
         count_names(&equation.right, &mut names);
     }
-    for interface in &program.interfaces {
+    for interface in &net.interfaces {
         count_names(interface, &mut names);
     }
 
@@ -230,7 +239,7 @@ pub fn check_net_variables<'a>(program: &'a ast::Program) -> Result<(), TypeErro
 }
 
 /// 不允许冲突的规则
-pub fn check_overlapping<'a>(program: &'a ast::Program) -> Result<(), TypeError<'a>> {
+pub fn check_overlapping<'a>(program: &'a ast::Module) -> Result<(), TypeError<'a>> {
     let mut rule_sets: HashMap<_, &Span<ast::Rule>> = HashMap::new();
     for rule in &program.rules {
         let agents = (
@@ -292,12 +301,12 @@ fn check_equations_io_balance<'a>(
 }
 
 /// 网络输入-输出平衡
-pub fn check_net_io_balance<'a>(program: &'a ast::Program) -> Result<(), TypeError<'a>> {
+pub fn check_net_io_balance<'a>(net: &'a ast::Net) -> Result<(), TypeError<'a>> {
     let mut input_map = HashMap::new();
-    for interface in &program.interfaces {
+    for interface in &net.interfaces {
         check_term_io_balance(interface, &mut input_map)?;
     }
-    check_equations_io_balance(&program.equations, input_map)
+    check_equations_io_balance(&net.equations, input_map)
 }
 
 /// 规则输入-输出平衡
@@ -334,9 +343,17 @@ pub fn check_equation_var_io_dir<'a>(equation: &'a ast::Equation) -> Result<(), 
     Ok(())
 }
 
+/// Main 函数存在
+pub fn check_main<'a>(program: &'a ast::Module) -> Result<(), TypeError<'a>> {
+    if !program.nets.iter().any(|net| *net.name.as_ref() == "Main") {
+        return Err(TypeError::NoMainFunction);
+    }
+    Ok(())
+}
+
 /// 检查整个程序
-pub fn check_program<'a>(program: &'a ast::Program) -> Result<(), TypeError<'a>> {
-    for rule in &program.rules {
+pub fn check_module<'a>(module: &'a ast::Module) -> Result<(), TypeError<'a>> {
+    for rule in &module.rules {
         check_rule_terms(rule)?;
         check_rule_variables(rule)?;
         check_rule_io_balance(rule)?;
@@ -344,12 +361,16 @@ pub fn check_program<'a>(program: &'a ast::Program) -> Result<(), TypeError<'a>>
             check_equation_var_io_dir(equation)?;
         }
     }
-    for equation in &program.equations {
-        check_equation_var_io_dir(equation)?;
+
+    for net in &module.nets {
+        check_net_variables(net)?;
+        check_net_io_balance(net)?;
+        for equation in &net.equations {
+            check_equation_var_io_dir(equation)?;
+        }
     }
 
-    check_net_variables(program)?;
-    check_net_io_balance(program)?;
-    check_overlapping(program)?;
+    check_overlapping(module)?;
+    check_main(module)?;
     Ok(())
 }

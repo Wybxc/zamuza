@@ -20,7 +20,7 @@ mod grammar {
 use grammar::{Rule, ZamuzaParser};
 
 /// 从文本生成抽象语法树
-pub fn parse<'a>(source: &'a str, filename: &'a str) -> Result<ast::Program<'a>, String> {
+pub fn parse<'a>(source: &'a str, filename: &'a str) -> Result<ast::Module<'a>, String> {
     let mut parsed = ZamuzaParser::parse(Rule::Program, source).map_err(|err| {
         let (start, end) = match err.line_col {
             pest::error::LineColLocation::Pos(pos) => (pos, pos),
@@ -58,27 +58,22 @@ pub fn parse<'a>(source: &'a str, filename: &'a str) -> Result<ast::Program<'a>,
     let pairs = parsed.next().unwrap().into_inner();
 
     let mut rules = vec![];
-    let mut equations = vec![];
-    let mut interfaces = vec![];
+    let mut nets = vec![];
 
     for pair in pairs {
         match pair.as_rule() {
             Rule::Rule => rules.push(parse_rule(pair)),
-            Rule::Equation => equations.push(parse_equation(pair)),
-            Rule::Interface => {
-                interfaces.push(parse_interface(pair));
-            }
+            Rule::Net => nets.push(parse_net(pair)),
             Rule::EOI => {}
             _ => unreachable!(),
         }
     }
 
-    Ok(ast::Program {
+    Ok(ast::Module {
         filename,
         source,
         rules,
-        equations,
-        interfaces,
+        nets,
     })
 }
 
@@ -130,13 +125,39 @@ fn parse_rule_term(term: Pair<'_, Rule>) -> Span<'_, ast::RuleTerm<'_>> {
     let span = term.as_span();
     let mut terms = term.into_inner();
     let head = terms.next().unwrap();
-    let agent = parse_agent(head);
+    let agent = parse_ident(head);
     let body = terms.map(parse_name).collect::<Vec<_>>();
     let term = ast::RuleTerm { agent, body };
     Span::new(term, span)
 }
 
 fn parse_rule_equations(equations: Pair<'_, Rule>) -> Vec<Span<'_, ast::Equation<'_>>> {
+    let equations = equations.into_inner();
+    equations.map(parse_equation).collect::<Vec<_>>()
+}
+
+fn parse_net(net: Pair<'_, Rule>) -> Span<'_, ast::Net<'_>> {
+    let span = net.as_span();
+    let mut net = net.into_inner();
+
+    let name = parse_ident(net.next().unwrap());
+    let interfaces = parse_interfaces(net.next().unwrap());
+    let equations = parse_net_equations(net.next().unwrap());
+
+    let net = ast::Net {
+        name,
+        interfaces,
+        equations,
+    };
+    Span::new(net, span)
+}
+
+fn parse_interfaces(interfaces: Pair<'_, Rule>) -> Vec<ast::Term<'_>> {
+    let interfaces = interfaces.into_inner();
+    interfaces.map(parse_term).collect::<Vec<_>>()
+}
+
+fn parse_net_equations(equations: Pair<'_, Rule>) -> Vec<Span<'_, ast::Equation<'_>>> {
     let equations = equations.into_inner();
     equations.map(parse_equation).collect::<Vec<_>>()
 }
@@ -172,11 +193,6 @@ fn parse_equation(equation: Pair<'_, Rule>) -> Span<'_, ast::Equation<'_>> {
     Span::new(equation, span)
 }
 
-fn parse_interface(interface: Pair<'_, Rule>) -> ast::Term<'_> {
-    let term = interface.into_inner().next().unwrap();
-    parse_term(term)
-}
-
 fn parse_term(term: Pair<'_, Rule>) -> ast::Term<'_> {
     let span = term.as_span();
     let mut terms = term.into_inner();
@@ -184,7 +200,7 @@ fn parse_term(term: Pair<'_, Rule>) -> ast::Term<'_> {
     let term = match head.as_rule() {
         Rule::Name => ast::Term::Name(parse_name(head)),
         Rule::Agent => {
-            let name = parse_agent(head);
+            let name = parse_ident(head);
             let body = terms.map(parse_term).collect::<Vec<_>>();
             let agent = ast::Agent { name, body };
             ast::Term::Agent(Span::new(agent, span))
@@ -209,6 +225,6 @@ fn parse_name(name: Pair<'_, Rule>) -> Span<'_, ast::Name<'_>> {
     Span::new(name, span)
 }
 
-fn parse_agent(agent: Pair<'_, Rule>) -> Span<'_, &str> {
+fn parse_ident(agent: Pair<'_, Rule>) -> Span<'_, &str> {
     Span::new(agent.as_str(), agent.as_span())
 }

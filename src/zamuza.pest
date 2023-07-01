@@ -1,18 +1,20 @@
-Program = { SOI ~ (Rule | NetEquation | Interface)+ ~ EOI }
+Program = { SOI ~ (Rule | Net)+ ~ EOI }
 
-Rule               = { RuleTermPair ~ "=>" ~ RuleEquations }
+Rule              = { RuleTermPair ~ "=>" ~ RuleEquations }
 RuleTermPair      = { RuleTermLeftRight | RuleTermRightLeft }
 RuleTermLeftRight = { RuleTerm ~ ">>" ~ RuleTerm }
 RuleTermRightLeft = { RuleTerm ~ "<<" ~ RuleTerm }
-RuleTerm           = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ ")")? }
-RuleEquations      = { "_" | Equation ~ (Comma ~ Equation)* }
+RuleTerm          = { Agent ~ ("(" ~ Name ~ (Comma ~ Name)* ~ Comma? ~ ")")? }
+RuleEquations     = { "_" | Equation ~ (Comma ~ Equation)* ~ Comma? }
 
-NetEquation       = _{ "::" ~ Equation }
-Equation          =  { EquationLeftRight | EquationRightLeft }
-EquationLeftRight =  { Term ~ "->" ~ Term }
-EquationRightLeft =  { Term ~ "<-" ~ Term }
+Net          = { Ident ~ "<|" ~ Interfaces ~ "|>" ~ NetEquations }
+NetEquations = { "_" | Equation ~ (Comma ~ Equation)* ~ Comma? }
 
-Interface = { "::" ~ ("$" ~ "<-" ~ Term | Term ~ "->" ~ "$") }
+Equation          = { EquationLeftRight | EquationRightLeft }
+EquationLeftRight = { Term ~ "->" ~ Term }
+EquationRightLeft = { Term ~ "<-" ~ Term }
+
+Interfaces = { Term ~ (Comma ~ Term)* ~ Comma? }
 
 Term    = { Name | Agent ~ ("(" ~ Term ~ (Comma ~ Term)* ~ ")")? }
 Name    = { NameIn | NameOut }
@@ -24,7 +26,7 @@ Ident     = @{ Letter ~ LetterNum* ~ "'"* }
 LetterNum =  { Letter | '0'..'9' }
 Letter    =  { LETTER | "_" }
 
-Comma = _{ "," }
+Comma = _{ "," | ";" }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

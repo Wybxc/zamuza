@@ -214,38 +214,66 @@ impl<'a> Display for Rule<'a> {
             } else {
                 "_".to_string()
             }
-        )?;
+        )
+    }
+}
 
-        Ok(())
+/// 程序中的网络
+#[derive(Debug, Clone, PartialEq)]
+pub struct Net<'a> {
+    /// 网络名称
+    pub name: Span<'a, &'a str>,
+    /// 网络接口
+    pub interfaces: Vec<Term<'a>>,
+    /// 网络方程
+    pub equations: Vec<Span<'a, Equation<'a>>>,
+}
+
+impl<'a> Display for Net<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} <| {} |> {}",
+            self.name,
+            self.interfaces
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            if !self.equations.is_empty() {
+                self.equations
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                "_".to_string()
+            }
+        )
     }
 }
 
 /// 整个程序
 #[derive(Debug, Clone, PartialEq)]
-pub struct Program<'a> {
+pub struct Module<'a> {
     /// 程序文件名
     pub filename: &'a str,
     /// 源代码
     pub source: &'a str,
     /// 程序中的规则
     pub rules: Vec<Span<'a, Rule<'a>>>,
-    /// 程序中的方程
-    pub equations: Vec<Span<'a, Equation<'a>>>,
-    /// 程序的接口
-    pub interfaces: Vec<Term<'a>>,
+    /// 程序中的网络
+    pub nets: Vec<Span<'a, Net<'a>>>,
 }
 
-impl<'a> Display for Program<'a> {
+impl<'a> Display for Module<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "/* {} */", self.filename)?;
         for rule in &self.rules {
             writeln!(f, "{}", rule)?;
         }
-        for equation in &self.equations {
-            writeln!(f, "{}", equation)?;
-        }
-        for interface in &self.interfaces {
-            writeln!(f, "{} -> $", interface)?;
+        for net in &self.nets {
+            writeln!(f, "{}", net)?;
         }
         Ok(())
     }

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::{
     options::Options,
-    runtime::{AgentId, AgentMeta, Initializer, Instruction, Main, Program, Rule},
+    runtime::{AgentId, AgentMeta, Function, Initializer, Instruction, Program, Rule},
 };
 
 /// 编译到 C 语言的运行时
@@ -22,7 +22,11 @@ impl super::Target for C {
         }
 
         Self::write_rule_map(&mut f, program.rule_map)?;
-        Self::write_main(&mut f, program.main)?;
+
+        for function in program.functions {
+            Self::write_function(&mut f, function)?;
+        }
+        Self::write_main(&mut f)?;
         Ok(())
     }
 }
@@ -321,7 +325,46 @@ void init_rules() {{
         Ok(())
     }
 
-    fn write_main(mut f: impl std::io::Write, main: Main) -> Result<()> {
+    fn write_function(mut f: impl std::io::Write, func: Function) -> Result<()> {
+        write!(
+            f,
+            r#"
+size_t* f_{name}(size_t* cnt) {{
+"#,
+            name = func.name
+        )?;
+
+        for initializer in func.initializers {
+            Self::write_initializer(&mut f, initializer)?;
+        }
+        for instruction in func.instructions {
+            Self::write_instruction(&mut f, instruction)?;
+        }
+
+        writeln!(
+            f,
+            r#"
+    *cnt = {count};
+    size_t* outputs = malloc(sizeof(size_t) * {count});
+"#,
+            count = func.outputs.len()
+        )?;
+        for (i, output) in func.outputs.into_iter().enumerate() {
+            writeln!(f, r#"    outputs[{i}] = {output};"#)?;
+        }
+
+        write!(
+            f,
+            r#"
+    return outputs;
+}}
+"#,
+        )?;
+
+        Ok(())
+    }
+
+    fn write_main(mut f: impl std::io::Write) -> Result<()> {
         write!(
             f,
             r#"
@@ -329,25 +372,16 @@ int main() {{
 #ifdef ZZ_TIMING
     clock_t start = clock();
 #endif
-"#
-        )?;
 
-        for initializer in main.initializers {
-            Self::write_initializer(&mut f, initializer)?;
-        }
-        for instruction in main.instructions {
-            Self::write_instruction(&mut f, instruction)?;
-        }
+    size_t n;
+    size_t* outputs = f_Main(&n);
 
-        writeln!(f, "\n\n    run();")?;
-        for output in main.outputs {
-            writeln!(f, r#"    print_term(stdout, {output}, 1000);"#)?;
-            writeln!(f, r#"    printf("\n");"#)?;
-        }
-
-        write!(
-            f,
-            r#"
+    run();
+    for (size_t i = 0; i < n; i++) {{
+        print_term(stdout, outputs[i], 1000);
+        printf("\n");
+    }}
+    free(outputs);
 
 #ifdef ZZ_TIMING
     clock_t end = clock();
@@ -358,7 +392,7 @@ int main() {{
 
     return 0;
 }}
-"#,
+"#
         )?;
 
         Ok(())

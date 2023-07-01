@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 
 use crate::ast;
 
-use super::{AgentId, AgentMeta, Initializer, Instruction, Local, Main, Program, Rule};
+use super::{AgentId, AgentMeta, Function, Initializer, Instruction, Local, Program, Rule};
 
 struct Name(pub String);
 
@@ -17,9 +17,8 @@ enum ArgSlot {
 #[derive(Default)]
 pub struct RuntimeBuilder {
     global: GlobalBuilder,
-    interfaces: Vec<Local>,
     rules: RulesBuilder,
-    main: FunctionBuilder,
+    functions: FunctionsBuilder,
 }
 
 impl RuntimeBuilder {
@@ -28,67 +27,37 @@ impl RuntimeBuilder {
         Default::default()
     }
 
-    fn term(&mut self, term: ast::Term) -> Result<Local> {
-        self.main.term(&mut self.global, term)
-    }
-
-    /// 向运行时添加一个 `Rule`。
-    pub fn rule(&mut self, rule: ast::Rule) -> Result<&mut Self> {
-        self.rules.rule(&mut self.global, rule)?;
-        Ok(self)
-    }
-
-    /// 向运行时添加一个 `Equation`。
-    pub fn equation(&mut self, equation: ast::Equation) -> Result<&mut Self> {
-        self.main.equation(&mut self.global, equation)?;
-        Ok(self)
-    }
-
-    /// 设置运行时的接口。
-    pub fn interface(&mut self, interface: ast::Term) -> Result<&mut Self> {
-        let term = self.term(interface)?;
-        self.interfaces.push(term);
-        Ok(self)
-    }
-
     /// 向运行时添加一个 `Program`。
-    pub fn program(&mut self, program: ast::Program) -> Result<&mut Self> {
-        for rule in program.rules {
-            self.rule(rule.into_inner())?;
+    pub fn module(&mut self, module: ast::Module) -> Result<&mut Self> {
+        for rule in module.rules {
+            self.rules.rule(&mut self.global, rule.into_inner())?;
         }
-        for equation in program.equations {
-            self.equation(equation.into_inner())?;
+        for net in module.nets {
+            self.functions
+                .function(&mut self.global, net.into_inner())?;
         }
-        for interface in program.interfaces {
-            self.interface(interface)?;
-        }
+
         Ok(self)
     }
 
     /// 构建运行时。
     pub fn build(self) -> Result<Program> {
-        let main = self.main.build()?;
-        let main = Main {
-            initializers: main.0,
-            instructions: main.1,
-            outputs: self.interfaces,
-        };
-
         let agent_metas = self.global.build();
         let (rules, rule_map) = self.rules.build();
+        let functions = self.functions.build();
 
         Ok(Program {
             agents: agent_metas,
-            main,
             rules,
             rule_map,
+            functions,
         })
     }
 
     /// 从 `Program` 构建运行时。
-    pub fn build_runtime(program: ast::Program) -> Result<Program> {
+    pub fn build_runtime(program: ast::Module) -> Result<Program> {
         let mut builder = Self::new();
-        builder.program(program)?;
+        builder.module(program)?;
         builder.build()
     }
 }
@@ -131,14 +100,14 @@ impl GlobalBuilder {
 }
 
 #[derive(Default)]
-struct FunctionBuilder {
+struct BodyBuilder {
     arguments: Vec<(Name, ArgSlot)>,
     names: Vec<Name>,
     terms: Vec<AgentId>,
-    body: Vec<Instruction>,
+    instructions: Vec<Instruction>,
 }
 
-impl FunctionBuilder {
+impl BodyBuilder {
     pub fn slot(&mut self, name: String, slot: ArgSlot) -> &mut Self {
         self.arguments.push((Name(name), slot));
         self
@@ -189,7 +158,7 @@ impl FunctionBuilder {
 
                 for (i, term) in body.into_iter().enumerate() {
                     let sub_name = self.term(global, term)?;
-                    self.body.push(Instruction::SetSlot {
+                    self.instructions.push(Instruction::SetSlot {
                         target: term_name,
                         slot: i + 1,
                         value: sub_name,
@@ -210,7 +179,7 @@ impl FunctionBuilder {
         let ast::Equation { left, right } = equation;
         let left_name = self.term(global, left)?;
         let right_name = self.term(global, right)?;
-        self.body.push(Instruction::PushEquation {
+        self.instructions.push(Instruction::PushEquation {
             left: left_name,
             right: right_name,
             description,
@@ -239,7 +208,7 @@ impl FunctionBuilder {
             .map(|(index, id)| Initializer::Agent { index, id });
         let initailizers = arguments.chain(names).chain(terms).collect::<Vec<_>>();
 
-        Ok((initailizers, self.body))
+        Ok((initailizers, self.instructions))
     }
 }
 
@@ -261,7 +230,7 @@ impl RulesBuilder {
             right: term2,
         } = term_pair.into_inner();
 
-        let mut rule = FunctionBuilder::default();
+        let mut body = BodyBuilder::default();
         let a1 = global.add_or_get_agent(&term1.agent, term1.body.len())?;
         let a2 = global.add_or_get_agent(&term2.agent, term2.body.len())?;
 
@@ -274,17 +243,17 @@ impl RulesBuilder {
         };
 
         for (i, name) in term_left.into_inner().body.into_iter().enumerate() {
-            rule.slot(name.as_name().to_string(), ArgSlot::Left(i + 1));
+            body.slot(name.as_name().to_string(), ArgSlot::Left(i + 1));
         }
         for (i, name) in term_right.into_inner().body.into_iter().enumerate() {
-            rule.slot(name.as_name().to_string(), ArgSlot::Right(i + 1));
+            body.slot(name.as_name().to_string(), ArgSlot::Right(i + 1));
         }
 
         for equation in equations {
-            rule.equation(global, equation.into_inner())?;
+            body.equation(global, equation.into_inner())?;
         }
 
-        let (initializers, instructions) = rule.build()?;
+        let (initializers, instructions) = body.build()?;
         let index = self.rules.len();
         self.rules.push(Rule {
             index,
@@ -299,5 +268,42 @@ impl RulesBuilder {
 
     pub fn build(self) -> (Vec<Rule>, Vec<(AgentId, AgentId, usize)>) {
         (self.rules, self.rule_map)
+    }
+}
+
+#[derive(Default)]
+struct FunctionsBuilder {
+    functions: Vec<Function>,
+}
+
+impl FunctionsBuilder {
+    pub fn function(
+        &mut self,
+        global: &mut GlobalBuilder,
+        function: ast::Net,
+    ) -> Result<&mut Self> {
+        let mut body = BodyBuilder::default();
+        let mut outputs = vec![];
+
+        for equation in function.equations {
+            body.equation(global, equation.into_inner())?;
+        }
+        for interface in function.interfaces {
+            let term = body.term(global, interface)?;
+            outputs.push(term);
+        }
+
+        let (initializers, instructions) = body.build()?;
+        self.functions.push(Function {
+            name: function.name.as_ref().to_string(),
+            initializers,
+            instructions,
+            outputs,
+        });
+        Ok(self)
+    }
+
+    pub fn build(self) -> Vec<Function> {
+        self.functions
     }
 }

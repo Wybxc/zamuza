@@ -157,30 +157,34 @@ impl Display for Rule {
     }
 }
 
-/// Main function
+/// function
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
-pub struct Main {
+pub struct Function {
+    pub name: String,
     pub initializers: Vec<Initializer>,
     pub instructions: Vec<Instruction>,
     pub outputs: Vec<Local>,
 }
 
-impl Display for Main {
+impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "function main() {{")?;
+        writeln!(f, "export function f_{}() {{", self.name)?;
         for initializer in &self.initializers {
             writeln!(f, "    {}", initializer)?;
         }
         for instruction in &self.instructions {
             writeln!(f, "    {}", instruction)?;
         }
-        writeln!(f)?;
-        writeln!(f, "    init_rules();")?;
-        writeln!(f, "    run();")?;
-        for output in &self.outputs {
-            writeln!(f, "    print({});", output)?;
-        }
+        writeln!(
+            f,
+            "    return {}",
+            self.outputs
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
         writeln!(f, "}}")?;
         Ok(())
     }
@@ -196,7 +200,7 @@ pub struct Program {
     /// Rule map (left, right, rule_id)
     pub rule_map: Vec<(AgentId, AgentId, usize)>,
     /// Main function
-    pub main: Main,
+    pub functions: Vec<Function>,
 }
 
 impl Display for Program {
@@ -219,7 +223,26 @@ impl Display for Program {
         writeln!(f, "}}")?;
         writeln!(f)?;
 
-        writeln!(f, "{}", self.main)?;
+        writeln!(f, "// Functions")?;
+        for function in &self.functions {
+            writeln!(f, "{}", function)?;
+        }
+
+        writeln!(
+            f,
+            "{}",
+            r#"
+function main() {{
+    outputs = f_Main();
+    init_rules();
+    run();
+    for (output of outputs) {{
+        print(output);
+    }}
+}}
+"#
+            .trim_start()
+        )?;
         Ok(())
     }
 }

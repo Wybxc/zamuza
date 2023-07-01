@@ -32,7 +32,7 @@ pub fn compile<T: Target>(
         Err(snippet) => anyhow::bail!("{}", snippet),
     };
 
-    if let Err(e) = check::check_program(&program) {
+    if let Err(e) = check::check_module(&program) {
         anyhow::bail!("{}", e.to_snippet(source, filename));
     }
 
@@ -52,7 +52,7 @@ pub fn compile_to_file<T: Target>(
         Err(snippet) => anyhow::bail!("{}", snippet),
     };
 
-    if let Err(e) = check::check_program(&program) {
+    if let Err(e) = check::check_module(&program) {
         anyhow::bail!("{}", e.to_snippet(source, filename));
     }
 

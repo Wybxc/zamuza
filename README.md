@@ -24,11 +24,10 @@ Zero  >> Dup(@x, @y) => @x <- Zero, @y <- Zero
 S(#x) >> Erase       => #x -> Erase
 Zero  >> Erase       => _
 
-:: @two <- S(S(Zero))
-:: #two -> Dup(@x, @y)
-:: #x -> Mul(#y, @result)
-
-$ = #result
+Main <| #result |>
+    @two <- S(S(Zero))
+    #two -> Dup(@x, @y)
+    #x -> Mul(#y, @result)
 ```
 
 保存为 `example.zz`，然后运行：

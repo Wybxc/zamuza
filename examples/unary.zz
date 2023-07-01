@@ -12,7 +12,7 @@ Zero >> Mul(#x, @y) => #x -> Erase, @y <- Zero
 Zero >> Dup(@x, @y) => @x <- Zero, @y <- Zero
 Zero >> Erase       => _
 
-:: @three <- S(S(S(Zero)))
-:: #three -> Dup(@x, @y)
-:: #x -> Mul(#y, @result)
-:: $ <- #result
+Main <| #result |>
+    @three <- S(S(S(Zero)));
+    #three -> Dup(@x, @y);
+    #x -> Mul(#y, @result);
