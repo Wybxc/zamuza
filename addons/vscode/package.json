@@ -2,10 +2,12 @@
   "name": "zamuza-syntax-highlight",
   "displayName": "zamuza-syntax-highlight",
   "description": "VSCode Language Support for the Zamuza language",
-  "version": "0.0.1",
+  "version": "0.0.2",
+  "repository": "https://github.com/Wybxc/zamuza",
   "engines": {
     "vscode": "^1.39.0"
   },
+  "publisher": "wybxc",
   "categories": [
     "Programming Languages"
   ],

@@ -137,6 +137,12 @@
           <key>match</key>
           <string>(&gt;&gt;|&lt;&lt;|-&gt;|&lt;-)</string>
           <key>name</key>
+          <string>keyword punctuation.zamuza</string>
+        </dict>
+        <dict>
+          <key>match</key>
+          <string>(=&gt;|\|&gt;|&lt;\|)</string>
+          <key>name</key>
           <string>punctuation.zamuza</string>
         </dict>
        </array>

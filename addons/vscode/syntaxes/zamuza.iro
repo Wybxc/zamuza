@@ -47,11 +47,14 @@ styles [] {
    textmate_scope       = entity.name.class
 }
 
+.keyword : style {
+   color                 = blue
+   textmate_scope        = keyword punctuation
+}
+
 .punct : style {
    color                 = red_2
-   ace_scope             = punctuation
    textmate_scope        = punctuation
-   pygments_scope        = Punctuation
 }
 
 .none : style {
@@ -98,6 +101,10 @@ name: context {
 punct: context {
    : pattern {
       regex \= (>>|<<|->|<-)
+      styles[] = .keyword;
+   }
+   : pattern {
+      regex \= (=>|\|>|<\|)
       styles[] = .punct;
    }
 }
