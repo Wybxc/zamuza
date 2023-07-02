@@ -84,6 +84,8 @@
             ])
             fenixPkgs.rust-analyzer
 
+            pkgs.nodejs-18_x
+
             pest-ide-tools
           ] ++ optionals (!pkgs.stdenv.isDarwin) [ pkgs.gdb ];
 
