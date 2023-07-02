@@ -161,7 +161,7 @@ impl Display for Rule {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct Function {
-    pub name: String,
+    pub index: usize,
     pub initializers: Vec<Initializer>,
     pub instructions: Vec<Instruction>,
     pub outputs: Vec<Local>,
@@ -169,7 +169,7 @@ pub struct Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "export function f_{}() {{", self.name)?;
+        writeln!(f, "export function func_{}() {{", self.index)?;
         for initializer in &self.initializers {
             writeln!(f, "    {}", initializer)?;
         }
@@ -190,6 +190,24 @@ impl Display for Function {
     }
 }
 
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub struct FunctionMeta {
+    pub name: String,
+    pub output_count: usize,
+}
+
+impl Display for FunctionMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "let {} = define_function({});",
+            self.name, self.output_count
+        )?;
+        Ok(())
+    }
+}
+
 /// Program
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -199,8 +217,12 @@ pub struct Program {
     pub rules: Vec<Rule>,
     /// Rule map (left, right, rule_id)
     pub rule_map: Vec<(AgentId, AgentId, usize)>,
-    /// Main function
+    /// Functions
     pub functions: Vec<Function>,
+    /// Function metadata
+    pub function_meta: Vec<FunctionMeta>,
+    /// Entry point
+    pub entry_point: usize,
 }
 
 impl Display for Program {

@@ -4,7 +4,9 @@ use anyhow::{bail, Result};
 
 use crate::ast;
 
-use super::{AgentId, AgentMeta, Function, Initializer, Instruction, Local, Program, Rule};
+use super::{
+    AgentId, AgentMeta, Function, FunctionMeta, Initializer, Instruction, Local, Program, Rule,
+};
 
 struct Name(pub String);
 
@@ -42,15 +44,17 @@ impl RuntimeBuilder {
 
     /// 构建运行时。
     pub fn build(self) -> Result<Program> {
-        let agent_metas = self.global.build();
+        let agents = self.global.build();
         let (rules, rule_map) = self.rules.build();
-        let functions = self.functions.build();
+        let (functions, function_meta, entry_point) = self.functions.build()?;
 
         Ok(Program {
-            agents: agent_metas,
+            agents,
             rules,
             rule_map,
             functions,
+            function_meta,
+            entry_point,
         })
     }
 
@@ -274,16 +278,32 @@ impl RulesBuilder {
 #[derive(Default)]
 struct FunctionsBuilder {
     functions: Vec<Function>,
+    function_meta: Vec<FunctionMeta>,
+    entry_point: Option<usize>,
 }
 
 impl FunctionsBuilder {
+    fn entry_point(&mut self, index: usize) -> Result<()> {
+        if self.entry_point.is_some() {
+            anyhow::bail!("entry point already exists");
+        }
+        self.entry_point = Some(index);
+        Ok(())
+    }
+
     pub fn function(
         &mut self,
         global: &mut GlobalBuilder,
         function: ast::Net,
     ) -> Result<&mut Self> {
+        if *function.name == "Main" {
+            self.entry_point(self.functions.len())?;
+        }
+
         let mut body = BodyBuilder::default();
         let mut outputs = vec![];
+        let output_count = function.interfaces.len();
+        outputs.reserve(output_count);
 
         for equation in function.equations {
             body.equation(global, equation.into_inner())?;
@@ -294,16 +314,25 @@ impl FunctionsBuilder {
         }
 
         let (initializers, instructions) = body.build()?;
+        let index = self.functions.len();
         self.functions.push(Function {
-            name: function.name.as_ref().to_string(),
+            index,
             initializers,
             instructions,
             outputs,
         });
+        self.function_meta.push(FunctionMeta {
+            name: function.name.as_ref().to_string(),
+            output_count,
+        });
         Ok(self)
     }
 
-    pub fn build(self) -> Vec<Function> {
-        self.functions
+    pub fn build(self) -> Result<(Vec<Function>, Vec<FunctionMeta>, usize)> {
+        if let Some(entry_point) = self.entry_point {
+            Ok((self.functions, self.function_meta, entry_point))
+        } else {
+            anyhow::bail!("entry point not found");
+        }
     }
 }

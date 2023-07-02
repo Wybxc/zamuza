@@ -4,7 +4,9 @@ use anyhow::Result;
 
 use crate::{
     options::Options,
-    runtime::{AgentId, AgentMeta, Function, Initializer, Instruction, Program, Rule},
+    runtime::{
+        AgentId, AgentMeta, Function, FunctionMeta, Initializer, Instruction, Program, Rule,
+    },
 };
 
 /// 编译到 C 语言的运行时
@@ -26,7 +28,8 @@ impl super::Target for C {
         for function in program.functions {
             Self::write_function(&mut f, function)?;
         }
-        Self::write_main(&mut f)?;
+        Self::write_function_meta(&mut f, program.function_meta)?;
+        Self::write_main(&mut f, program.entry_point)?;
         Ok(())
     }
 }
@@ -60,6 +63,7 @@ size_t REDUCTIONS = 0;
 #endif
 
 typedef void (*RuleFun)(size_t* left, size_t* right);
+typedef size_t* (*NetFun)();
 
 size_t* new_agent(size_t agent_id);
 size_t* new_name();
@@ -95,8 +99,8 @@ void run();
             r#"
 #define AGENT_COUNT {agents_count}
 #define NAME_COUNTER_START {agents_count}
-char* AGENTS[] = {{ {agents_names} }};
-size_t ARITY[] = {{ {agents_arity} }};
+const char* AGENTS[] = {{ {agents_names} }};
+const size_t ARITY[] = {{ {agents_arity} }};
 size_t NAME_COUNTER = NAME_COUNTER_START;
 "#
         )?;
@@ -139,6 +143,18 @@ void pop_equation(size_t** left, size_t** right) {
     EQ_STACK_SIZE--;
     *left = EQ_STACK[EQ_STACK_SIZE][0];
     *right = EQ_STACK[EQ_STACK_SIZE][1];
+}
+
+void free_term(size_t* term) {
+    if (IS_NAME(term)) {
+        free(term);
+        return;
+    }
+    size_t arity = ARITY[term[0]];
+    for (size_t i = 1; i <= arity; i++) {
+        free_term((size_t*) term[i]);
+    }
+    free(term);
 }
 
 void print_term(FILE* f, size_t* term, size_t max_recursion) {
@@ -329,9 +345,9 @@ void init_rules() {{
         write!(
             f,
             r#"
-size_t* f_{name}(size_t* cnt) {{
+size_t** func_{id}() {{
 "#,
-            name = func.name
+            id = func.index
         )?;
 
         for initializer in func.initializers {
@@ -344,8 +360,7 @@ size_t* f_{name}(size_t* cnt) {{
         writeln!(
             f,
             r#"
-    *cnt = {count};
-    size_t* outputs = malloc(sizeof(size_t) * {count});
+    size_t** outputs = malloc(sizeof(size_t*) * {count});
 "#,
             count = func.outputs.len()
         )?;
@@ -364,7 +379,31 @@ size_t* f_{name}(size_t* cnt) {{
         Ok(())
     }
 
-    fn write_main(mut f: impl std::io::Write) -> Result<()> {
+    fn write_function_meta(
+        mut f: impl std::io::Write,
+        function_meta: Vec<FunctionMeta>,
+    ) -> Result<()> {
+        write!(
+            f,
+            r#"
+const NetFun NET_FUNCS[] = {{ {} }};
+const size_t OUTPUT_COUNTS[] = {{ {} }};
+"#,
+            (0..function_meta.len())
+                .map(|i| format!("func_{}", i))
+                .collect::<Vec<_>>()
+                .join(", "),
+            function_meta
+                .into_iter()
+                .map(|m| m.output_count.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+
+        Ok(())
+    }
+
+    fn write_main(mut f: impl std::io::Write, entry_point: usize) -> Result<()> {
         write!(
             f,
             r#"
@@ -373,12 +412,12 @@ int main() {{
     clock_t start = clock();
 #endif
 
-    size_t n;
-    size_t* outputs = f_Main(&n);
+    size_t** outputs = NET_FUNCS[{entry_point}]();
 
     run();
-    for (size_t i = 0; i < n; i++) {{
+    for (size_t i = 0; i < OUTPUT_COUNTS[{entry_point}]; i++) {{
         print_term(stdout, outputs[i], 1000);
+        free_term(outputs[i]);
         printf("\n");
     }}
     free(outputs);
