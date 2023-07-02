@@ -15,9 +15,9 @@ enum Commands {
     /// Run a program
     #[command(visible_alias = "r")]
     Run {
-        /// Source file, or pass "-" to read from stdin
+        /// Source file, pass "-" to read from stdin
         #[clap(value_parser)]
-        input: clio::Input,
+        inputs: Vec<clio::Input>,
 
         #[clap(flatten)]
         options: Options,
@@ -25,9 +25,9 @@ enum Commands {
     /// Compile a program
     #[command(visible_alias = "c")]
     Compile {
-        /// Source file, or pass "-" to read from stdin
+        /// Source file, pass "-" to read from stdin
         #[clap(value_parser)]
-        input: clio::Input,
+        inputs: Vec<clio::Input>,
 
         /// Output file, pass "-" to write to stdout
         #[clap(short, long, value_parser)]
@@ -87,54 +87,45 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
-        Commands::Run { mut input, options } => {
-            let filename = get_filename(&input);
+        Commands::Run { inputs, options } => {
+            let mut context = zamuza::Context::new().set_options(options.into());
 
-            let mut program = String::new();
-            input.read_to_string(&mut program)?;
+            for mut input in inputs {
+                let filename = get_filename(&input);
+                let mut program = String::new();
+                input.read_to_string(&mut program)?;
+                context = context.add_file(&filename, &program)?;
+            }
 
-            zamuza::run(&program, &filename, &options.into())?;
+            context.run()?;
         }
         Commands::Compile {
-            mut input,
+            inputs,
             output,
             format,
             options,
         } => {
-            let filename = get_filename(&input);
+            let mut context = zamuza::Context::new().set_options(options.into());
 
-            let mut program = String::new();
-            input.read_to_string(&mut program)?;
+            for mut input in inputs {
+                let filename = get_filename(&input);
+                let mut program = String::new();
+                input.read_to_string(&mut program)?;
+                context = context.add_file(&filename, &program)?;
+            }
 
             if output.is_file() {
                 // write to file
                 match format {
-                    OutputFormat::Exe => zamuza::compile_to_file::<target::Exe>(
-                        &program,
-                        &filename,
-                        output.as_os_str(),
-                        &options.into(),
-                    )?,
-                    OutputFormat::C => zamuza::compile_to_file::<target::C>(
-                        &program,
-                        &filename,
-                        output.as_os_str(),
-                        &options.into(),
-                    )?,
+                    OutputFormat::Exe => context.output_file::<target::Exe>(output.as_os_str())?,
+                    OutputFormat::C => context.output_file::<target::C>(output.as_os_str())?,
                 }
             } else {
                 // write to stream
                 let output = output.create()?;
                 match format {
-                    OutputFormat::Exe => zamuza::compile::<target::Exe>(
-                        &program,
-                        &filename,
-                        output,
-                        &options.into(),
-                    )?,
-                    OutputFormat::C => {
-                        zamuza::compile::<target::C>(&program, &filename, output, &options.into())?
-                    }
+                    OutputFormat::Exe => context.output_stream::<target::Exe>(output)?,
+                    OutputFormat::C => context.output_stream::<target::C>(output)?,
                 }
             }
         }

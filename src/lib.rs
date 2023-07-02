@@ -20,55 +20,62 @@ use options::Options;
 use runtime::target::{self, Target};
 use runtime::RuntimeBuilder;
 
-/// Compile a program to a runtime.
-pub fn compile<T: Target>(
-    source: &str,
-    filename: &str,
-    output: impl std::io::Write,
-    options: &Options,
-) -> Result<()> {
-    let program = match parser::parse(source, filename) {
-        Ok(program) => program,
-        Err(snippet) => anyhow::bail!("{}", snippet),
-    };
-
-    if let Err(e) = check::check_module(&program) {
-        anyhow::bail!("{}", e.to_snippet());
-    }
-
-    let runtime = RuntimeBuilder::build_runtime(program.into_inner())?;
-    runtime.write::<T>(output, options)
+/// 编译器上下文
+#[derive(Default)]
+pub struct Context {
+    builder: RuntimeBuilder,
+    options: Options,
 }
 
-/// Compile a program to a runtime and write it to a file.
-pub fn compile_to_file<T: Target>(
-    source: &str,
-    filename: &str,
-    output: impl AsRef<std::path::Path>,
-    options: &Options,
-) -> Result<()> {
-    let program = match parser::parse(source, filename) {
-        Ok(program) => program,
-        Err(snippet) => anyhow::bail!("{}", snippet),
-    };
-
-    if let Err(e) = check::check_module(&program) {
-        anyhow::bail!("{}", e.to_snippet());
+impl Context {
+    /// 创建一个新的编译器上下文。
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    let runtime = RuntimeBuilder::build_runtime(program.into_inner())?;
-    runtime.write_to_file::<T>(output, options)
-}
+    /// 设置运行时选项。
+    pub fn set_options(mut self, options: Options) -> Self {
+        self.options = options;
+        self
+    }
 
-/// Run a program.
-pub fn run(source: &str, filename: &str, options: &Options) -> Result<()> {
-    let mut output = std::io::Cursor::new(Vec::new());
-    compile::<target::C>(source, filename, &mut output, options)?;
-    let output = std::ffi::CString::new(output.into_inner())?;
+    /// 编译源代码。
+    pub fn add_file(mut self, filename: &str, source: &str) -> Result<Self> {
+        let module = match parser::parse(source, filename) {
+            Ok(module) => module,
+            Err(snippet) => anyhow::bail!("{}", snippet),
+        };
 
-    tinycc::Context::new(tinycc::OutputType::Memory)?
-        .compile_string(&output)?
-        .run(&[])?;
+        if let Err(e) = check::check_module(&module) {
+            anyhow::bail!("{}", e.to_snippet());
+        }
 
-    Ok(())
+        self.builder.module(module.into_inner())?;
+        Ok(self)
+    }
+
+    /// 输出到流。
+    pub fn output_stream<T: Target>(self, output: impl std::io::Write) -> Result<()> {
+        let runtime = self.builder.build()?;
+        runtime.write::<T>(output, &self.options)
+    }
+
+    /// 输出到文件。
+    pub fn output_file<T: Target>(self, output: impl AsRef<std::path::Path>) -> Result<()> {
+        let runtime = self.builder.build()?;
+        runtime.write_to_file::<T>(output, &self.options)
+    }
+
+    /// 运行。
+    pub fn run(self) -> Result<()> {
+        let mut output = std::io::Cursor::new(Vec::new());
+        self.output_stream::<target::C>(&mut output)?;
+        let output = std::ffi::CString::new(output.into_inner())?;
+
+        tinycc::Context::new(tinycc::OutputType::Memory)?
+            .compile_string(&output)?
+            .run(&[])?;
+
+        Ok(())
+    }
 }

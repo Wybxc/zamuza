@@ -1,6 +1,7 @@
 //! 运行时选项。
 
 /// 运行时选项。
+#[derive(Clone, Debug)]
 pub struct Options {
     /// 运行时栈大小。
     pub stack_size: usize,

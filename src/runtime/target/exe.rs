@@ -11,7 +11,7 @@ pub struct Exe;
 
 impl Target for Exe {
     fn write(_f: impl std::io::Write, _program: Program, _options: &Options) -> anyhow::Result<()> {
-        anyhow::bail!("executable target is not supported to write to stream")
+        anyhow::bail!("executable target does not support writing to stream")
     }
 
     fn write_to_file(
