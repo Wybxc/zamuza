@@ -9,54 +9,9 @@
 //! - Rule：规则，由两个规则项和若干方程组成
 //! - Program：整个程序，由规则、方程和接口组成
 
-use std::{fmt::Display, ops::Deref};
+use std::fmt::Display;
 
-/// 位置信息片段
-#[derive(Debug, Clone, PartialEq)]
-pub struct Span<'a, T>
-where
-    T: 'a,
-{
-    inner: T,
-    span: pest::Span<'a>,
-}
-
-impl<'a, T: Display> Display for Span<'a, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.inner.fmt(f)
-    }
-}
-
-impl<'a, T> Deref for Span<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'a, T> AsRef<T> for Span<'a, T> {
-    fn as_ref(&self) -> &T {
-        &self.inner
-    }
-}
-
-impl<'a, T> Span<'a, T> {
-    /// 创建一个新的 `Span`。
-    pub fn new(inner: T, span: pest::Span<'a>) -> Self {
-        Self { inner, span }
-    }
-
-    /// 获取位置信息。
-    pub fn span(&self) -> pest::Span<'a> {
-        self.span
-    }
-
-    /// 转换为内部类型。
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
-}
+use crate::utils::Span;
 
 /// 变量名称
 #[derive(Debug, Clone, PartialEq)]
@@ -256,10 +211,6 @@ impl<'a> Display for Net<'a> {
 /// 整个程序
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module<'a> {
-    /// 程序文件名
-    pub filename: &'a str,
-    /// 源代码
-    pub source: &'a str,
     /// 程序中的规则
     pub rules: Vec<Span<'a, Rule<'a>>>,
     /// 程序中的网络
@@ -268,7 +219,6 @@ pub struct Module<'a> {
 
 impl<'a> Display for Module<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "/* {} */", self.filename)?;
         for rule in &self.rules {
             writeln!(f, "{}", rule)?;
         }

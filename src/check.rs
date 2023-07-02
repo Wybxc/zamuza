@@ -4,10 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
 
-use crate::{
-    ast::{self, Span},
-    utils::lines_span,
-};
+use crate::{ast, utils::Span};
 
 /// 类型检查错误。
 #[derive(Error, Debug)]
@@ -45,80 +42,69 @@ pub enum TypeError<'a> {
 }
 
 impl<'a> TypeError<'a> {
-    fn span(&self, source: &'a str) -> pest::Span<'a> {
-        match self {
-            TypeError::NonLinearRule { name } => name.span(),
-            TypeError::VariableCountError { name, .. } => name.span(),
-            TypeError::OverlappingRules(r1, r2) => {
-                let start = r1.span().start().min(r2.span().start());
-                let end = r1.span().end().max(r2.span().end());
-                pest::Span::new(source, start, end).unwrap()
-            }
-            TypeError::MultipleTimesAsInput { name } => name.span(),
-            TypeError::MultipleTimesAsOutput { name } => name.span(),
-            TypeError::MisdirectedInput { name } => name.span(),
-            TypeError::MisdirectedOutput { name } => name.span(),
-            TypeError::NoMainFunction => pest::Span::new(source, 0, 0).unwrap(),
-        }
-    }
-
-    fn annotations(&self) -> Vec<(pest::Span, &str, annotate_snippets::snippet::AnnotationType)> {
+    fn slices(&self) -> Vec<annotate_snippets::snippet::Slice> {
         use annotate_snippets::snippet::AnnotationType;
         match self {
             TypeError::NonLinearRule { name } => {
-                vec![(name.span(), "appears more than once", AnnotationType::Error)]
+                vec![name
+                    .lines()
+                    .unwrap_or_default()
+                    .as_annotation("appears more than once", AnnotationType::Error)]
             }
             TypeError::VariableCountError { name, .. } => {
-                vec![(
-                    name.span(),
-                    "should appear exactly twice",
+                vec![name
+                    .lines()
+                    .unwrap_or_default()
+                    .as_annotation("appears more than once", AnnotationType::Error)]
+            }
+            TypeError::OverlappingRules(r1, r2) => vec![
+                r1.lines()
+                    .unwrap_or_default()
+                    .as_annotation("overlaps with ...", AnnotationType::Error),
+                r2.lines()
+                    .unwrap_or_default()
+                    .as_annotation("... this rule", AnnotationType::Info),
+            ],
+            TypeError::MultipleTimesAsInput { name } => vec![name
+                .lines()
+                .unwrap_or_default()
+                .as_annotation("appears more than once as input", AnnotationType::Error)],
+            TypeError::MultipleTimesAsOutput { name } => vec![name
+                .lines()
+                .unwrap_or_default()
+                .as_annotation("appears more than once as output", AnnotationType::Error)],
+            TypeError::MisdirectedInput { name } => {
+                vec![name.lines().unwrap_or_default().as_annotation(
+                    "appears as input, where it should be output",
                     AnnotationType::Error,
                 )]
             }
-            TypeError::OverlappingRules(r1, r2) => vec![
-                (r1.span(), "overlaps ...", AnnotationType::Error),
-                (r2.span(), "with this rule", AnnotationType::Info),
-            ],
-            TypeError::MultipleTimesAsInput { name } => vec![(
-                name.span(),
-                "appears more than once as input",
-                AnnotationType::Error,
-            )],
-            TypeError::MultipleTimesAsOutput { name } => vec![(
-                name.span(),
-                "appears more than once as output",
-                AnnotationType::Error,
-            )],
-            TypeError::MisdirectedInput { name } => vec![(
-                name.span(),
-                "appears as input, where it should be output",
-                AnnotationType::Error,
-            )],
-            TypeError::MisdirectedOutput { name } => vec![(
-                name.span(),
-                "appears as output, where it should be input",
-                AnnotationType::Error,
-            )],
-            TypeError::NoMainFunction => vec![(
-                pest::Span::new("", 0, 0).unwrap(),
-                "no main function",
-                AnnotationType::Error,
-            )],
+            TypeError::MisdirectedOutput { name } => {
+                vec![name.lines().unwrap_or_default().as_annotation(
+                    "appears as output, where it should be input",
+                    AnnotationType::Error,
+                )]
+            }
+            TypeError::NoMainFunction => vec![annotate_snippets::snippet::Slice {
+                source: "",
+                line_start: 0,
+                origin: None,
+                annotations: vec![annotate_snippets::snippet::SourceAnnotation {
+                    range: (0, 0),
+                    label: "no main function",
+                    annotation_type: AnnotationType::Error,
+                }],
+                fold: false,
+            }],
         }
     }
 
     /// 将错误转换为可供显示的字符串。
-    pub fn to_snippet(&self, source: &str, filename: &str) -> String {
+    pub fn to_snippet(&self) -> String {
         use annotate_snippets::display_list::{DisplayList, FormatOptions};
-        use annotate_snippets::snippet::{
-            Annotation, AnnotationType, Slice, Snippet, SourceAnnotation,
-        };
+        use annotate_snippets::snippet::{Annotation, AnnotationType, Snippet};
 
         let label = self.to_string();
-        let span = self.span(source);
-        let start = span.start_pos().line_col();
-        let end = span.end_pos().line_col();
-        let (line_range, _) = lines_span(source, start, end).unwrap_or_default();
 
         let snippet = Snippet {
             title: Some(Annotation {
@@ -127,24 +113,7 @@ impl<'a> TypeError<'a> {
                 annotation_type: AnnotationType::Error,
             }),
             footer: vec![],
-            slices: vec![Slice {
-                source: &source[line_range.clone()],
-                line_start: start.0,
-                origin: Some(filename),
-                annotations: self
-                    .annotations()
-                    .into_iter()
-                    .map(|(range, label, ty)| SourceAnnotation {
-                        range: (
-                            range.start() - line_range.start,
-                            range.end() - line_range.start,
-                        ),
-                        label,
-                        annotation_type: ty,
-                    })
-                    .collect(),
-                fold: true,
-            }],
+            slices: self.slices(),
             opt: FormatOptions {
                 color: true,
                 ..Default::default()

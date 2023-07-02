@@ -33,10 +33,10 @@ pub fn compile<T: Target>(
     };
 
     if let Err(e) = check::check_module(&program) {
-        anyhow::bail!("{}", e.to_snippet(source, filename));
+        anyhow::bail!("{}", e.to_snippet());
     }
 
-    let runtime = RuntimeBuilder::build_runtime(program)?;
+    let runtime = RuntimeBuilder::build_runtime(program.into_inner())?;
     runtime.write::<T>(output, options)
 }
 
@@ -53,10 +53,10 @@ pub fn compile_to_file<T: Target>(
     };
 
     if let Err(e) = check::check_module(&program) {
-        anyhow::bail!("{}", e.to_snippet(source, filename));
+        anyhow::bail!("{}", e.to_snippet());
     }
 
-    let runtime = RuntimeBuilder::build_runtime(program)?;
+    let runtime = RuntimeBuilder::build_runtime(program.into_inner())?;
     runtime.write_to_file::<T>(output, options)
 }
 
