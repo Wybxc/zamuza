@@ -65,7 +65,7 @@ size_t REDUCTIONS = 0;
 #endif
 
 typedef void (*RuleFun)(size_t* left, size_t* right);
-typedef size_t* (*NetFun)();
+typedef size_t** (*NetFun)();
 
 size_t* new_agent(size_t agent_id);
 size_t* new_name();
