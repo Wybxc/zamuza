@@ -1,7 +1,5 @@
 //! 编译到 C 语言的运行时
 
-use anyhow::Result;
-
 use crate::{
     options::Options,
     runtime::{
@@ -13,7 +11,11 @@ use crate::{
 pub struct C;
 
 impl super::Target for C {
-    fn write(mut f: impl std::io::Write, program: Program, options: &Options) -> Result<()> {
+    fn write(
+        mut f: impl std::io::Write,
+        program: Program,
+        options: &Options,
+    ) -> Result<(), super::Error> {
         Self::write_includes(&mut f, options)?;
         Self::write_prelude(&mut f, options)?;
         Self::write_global(&mut f, program.agents)?;
@@ -40,7 +42,7 @@ impl C {
 #include <stdlib.h>
 "#;
 
-    fn write_includes(mut f: impl std::io::Write, options: &Options) -> Result<()> {
+    fn write_includes(mut f: impl std::io::Write, options: &Options) -> Result<(), super::Error> {
         f.write_all(C::INCLUDES.trim_start().as_bytes())?;
 
         if options.timing {
@@ -74,13 +76,16 @@ void init_rules();
 void run();
 "#;
 
-    fn write_prelude(mut f: impl std::io::Write, options: &Options) -> Result<()> {
+    fn write_prelude(mut f: impl std::io::Write, options: &Options) -> Result<(), super::Error> {
         writeln!(f, "#define MAX_STACK_SIZE {}", options.stack_size)?;
         f.write_all(C::PRELUDE.as_bytes())?;
         Ok(())
     }
 
-    fn write_global(mut f: impl std::io::Write, agents: Vec<AgentMeta>) -> Result<()> {
+    fn write_global(
+        mut f: impl std::io::Write,
+        agents: Vec<AgentMeta>,
+    ) -> Result<(), super::Error> {
         let agents_count = agents.len();
         let agents_arity = agents
             .iter()
@@ -261,12 +266,12 @@ void run() {
 }
 "#;
 
-    fn write_runtime(mut f: impl std::io::Write) -> Result<()> {
+    fn write_runtime(mut f: impl std::io::Write) -> Result<(), super::Error> {
         f.write_all(C::RUNTIME.as_bytes())?;
         Ok(())
     }
 
-    fn write_rule(mut f: impl std::io::Write, rule: Rule) -> Result<()> {
+    fn write_rule(mut f: impl std::io::Write, rule: Rule) -> Result<(), super::Error> {
         write!(
             f,
             r#"
@@ -289,7 +294,10 @@ void rule_{index}(size_t* left, size_t* right) {{
         Ok(())
     }
 
-    fn write_initializer(mut f: impl std::io::Write, initializer: Initializer) -> Result<()> {
+    fn write_initializer(
+        mut f: impl std::io::Write,
+        initializer: Initializer,
+    ) -> Result<(), super::Error> {
         match initializer {
             Initializer::Name { index } => {
                 writeln!(f, "    size_t* x{index} = new_name();")?;
@@ -307,7 +315,10 @@ void rule_{index}(size_t* left, size_t* right) {{
         Ok(())
     }
 
-    fn write_instruction(mut f: impl std::io::Write, instruction: Instruction) -> Result<()> {
+    fn write_instruction(
+        mut f: impl std::io::Write,
+        instruction: Instruction,
+    ) -> Result<(), super::Error> {
         match instruction {
             Instruction::SetSlot {
                 target,
@@ -326,7 +337,7 @@ void rule_{index}(size_t* left, size_t* right) {{
     fn write_rule_map(
         mut f: impl std::io::Write,
         rule_map: Vec<(AgentId, AgentId, usize)>,
-    ) -> Result<()> {
+    ) -> Result<(), super::Error> {
         write!(
             f,
             r#"
@@ -341,7 +352,7 @@ void init_rules() {{
         Ok(())
     }
 
-    fn write_function(mut f: impl std::io::Write, func: Function) -> Result<()> {
+    fn write_function(mut f: impl std::io::Write, func: Function) -> Result<(), super::Error> {
         write!(
             f,
             r#"
@@ -382,7 +393,7 @@ size_t** func_{id}() {{
     fn write_function_meta(
         mut f: impl std::io::Write,
         function_meta: Vec<FunctionMeta>,
-    ) -> Result<()> {
+    ) -> Result<(), super::Error> {
         write!(
             f,
             r#"
@@ -403,7 +414,7 @@ const size_t OUTPUT_COUNTS[] = {{ {} }};
         Ok(())
     }
 
-    fn write_main(mut f: impl std::io::Write, entry_point: usize) -> Result<()> {
+    fn write_main(mut f: impl std::io::Write, entry_point: usize) -> Result<(), super::Error> {
         write!(
             f,
             r#"

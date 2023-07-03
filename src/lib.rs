@@ -57,13 +57,15 @@ impl Context {
     /// 输出到流。
     pub fn output_stream<T: Target>(self, output: impl std::io::Write) -> Result<()> {
         let runtime = self.builder.build()?;
-        runtime.write::<T>(output, &self.options)
+        T::write(output, runtime, &self.options)?;
+        Ok(())
     }
 
     /// 输出到文件。
     pub fn output_file<T: Target>(self, output: impl AsRef<std::path::Path>) -> Result<()> {
         let runtime = self.builder.build()?;
-        runtime.write_to_file::<T>(output, &self.options)
+        T::write_to_file(output, runtime, &self.options)?;
+        Ok(())
     }
 
     /// 运行。
