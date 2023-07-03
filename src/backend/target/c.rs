@@ -2,7 +2,8 @@
 
 use crate::{
     backend::{
-        AgentId, AgentMeta, Function, FunctionMeta, Initializer, Instruction, Program, Rule,
+        AgentId, AgentMeta, Function, FunctionMeta, NetInitializer, NetInstruction, Program, Rule,
+        RuleInitializer, RuleInstruction,
     },
     options::Options,
 };
@@ -231,15 +232,11 @@ void run() {
             if (a_left <= a_right) {
                 if (RULES[a_left][a_right]) {
                     RULES[a_left][a_right](left, right);
-                    free(left);
-                    free(right);
                     continue;
                 }
             } else {
                 if (RULES[a_right][a_left]) {
                     RULES[a_right][a_left](right, left);
-                    free(left);
-                    free(right);
                     continue;
                 }
             }
@@ -283,10 +280,10 @@ void rule_{index}(size_t* left, size_t* right) {{
         )?;
 
         for initailizer in rule.initializers {
-            Self::write_initializer(&mut f, initailizer)?;
+            Self::write_rule_initializer(&mut f, initailizer)?;
         }
         for instruction in rule.instructions {
-            Self::write_instruction(&mut f, instruction)?;
+            Self::write_rule_instruction(&mut f, instruction)?;
         }
 
         writeln!(f, "}}")?;
@@ -294,42 +291,46 @@ void rule_{index}(size_t* left, size_t* right) {{
         Ok(())
     }
 
-    fn write_initializer(
+    fn write_rule_initializer(
         mut f: impl std::io::Write,
-        initializer: Initializer,
+        initializer: RuleInitializer,
     ) -> Result<(), super::Error> {
         match initializer {
-            Initializer::Name { index } => {
+            RuleInitializer::Name { index } => {
                 writeln!(f, "    size_t* x{index} = new_name();")?;
             }
-            Initializer::Agent { index, id } => {
+            RuleInitializer::Agent { index, id } => {
                 writeln!(f, "    size_t* a{index} = new_agent({id});")?
             }
-            Initializer::SlotFromLeft { index, slot } => {
+            RuleInitializer::SlotFromLeft { index, slot } => {
                 writeln!(f, "    size_t* s{index} = (size_t*) left[{slot}];",)?
             }
-            Initializer::SlotFromRight { index, slot } => {
+            RuleInitializer::SlotFromRight { index, slot } => {
                 writeln!(f, "    size_t* s{index} = (size_t*) right[{slot}];",)?
             }
+            RuleInitializer::ReuseLeft { index } => writeln!(f, "    size_t* a{index} = left;")?,
+            RuleInitializer::ReuseRight { index } => writeln!(f, "    size_t* a{index} = right;")?,
         }
         Ok(())
     }
 
-    fn write_instruction(
+    fn write_rule_instruction(
         mut f: impl std::io::Write,
-        instruction: Instruction,
+        instruction: RuleInstruction,
     ) -> Result<(), super::Error> {
         match instruction {
-            Instruction::SetSlot {
+            RuleInstruction::SetSlot {
                 target,
                 slot,
                 value,
             } => writeln!(f, "    {target}[{slot}] = (size_t) {value};")?,
-            Instruction::PushEquation {
+            RuleInstruction::PushEquation {
                 left,
                 right,
                 description,
             } => writeln!(f, "    push_equation({left}, {right});  // {description}")?,
+            RuleInstruction::FreeLeft => writeln!(f, "    free(left);")?,
+            RuleInstruction::FreeRight => writeln!(f, "    free(right);")?,
         }
         Ok(())
     }
@@ -362,10 +363,10 @@ size_t** func_{id}() {{
         )?;
 
         for initializer in func.initializers {
-            Self::write_initializer(&mut f, initializer)?;
+            Self::write_function_initializer(&mut f, initializer)?;
         }
         for instruction in func.instructions {
-            Self::write_instruction(&mut f, instruction)?;
+            Self::write_function_instruction(&mut f, instruction)?;
         }
 
         writeln!(
@@ -387,6 +388,40 @@ size_t** func_{id}() {{
 "#,
         )?;
 
+        Ok(())
+    }
+
+    fn write_function_initializer(
+        mut f: impl std::io::Write,
+        initializer: NetInitializer,
+    ) -> Result<(), super::Error> {
+        match initializer {
+            NetInitializer::Name { index } => {
+                writeln!(f, "    size_t* x{index} = new_name();")?;
+            }
+            NetInitializer::Agent { index, id } => {
+                writeln!(f, "    size_t* a{index} = new_agent({id});")?
+            }
+        }
+        Ok(())
+    }
+
+    fn write_function_instruction(
+        mut f: impl std::io::Write,
+        instruction: NetInstruction,
+    ) -> Result<(), super::Error> {
+        match instruction {
+            NetInstruction::SetSlot {
+                target,
+                slot,
+                value,
+            } => writeln!(f, "    {target}[{slot}] = (size_t) {value};")?,
+            NetInstruction::PushEquation {
+                left,
+                right,
+                description,
+            } => writeln!(f, "    push_equation({left}, {right});  // {description}")?,
+        }
         Ok(())
     }
 

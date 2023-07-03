@@ -5,7 +5,8 @@ use anyhow::{bail, Result};
 use crate::frontend::ast;
 
 use super::{
-    AgentId, AgentMeta, Function, FunctionMeta, Initializer, Instruction, Local, Program, Rule,
+    AgentId, AgentMeta, Function, FunctionMeta, Local, NetInitializer, NetInstruction, Program,
+    Rule, RuleInitializer, RuleInstruction,
 };
 
 struct Name(pub String);
@@ -104,14 +105,14 @@ impl GlobalBuilder {
 }
 
 #[derive(Default)]
-struct BodyBuilder {
+struct RuleBuilder {
     arguments: Vec<(Name, ArgSlot)>,
     names: Vec<Name>,
     terms: Vec<AgentId>,
-    instructions: Vec<Instruction>,
+    instructions: Vec<RuleInstruction>,
 }
 
-impl BodyBuilder {
+impl RuleBuilder {
     pub fn slot(&mut self, name: String, slot: ArgSlot) -> &mut Self {
         self.arguments.push((Name(name), slot));
         self
@@ -162,7 +163,7 @@ impl BodyBuilder {
 
                 for (i, term) in body.into_iter().enumerate() {
                     let sub_name = self.term(global, term)?;
-                    self.instructions.push(Instruction::SetSlot {
+                    self.instructions.push(RuleInstruction::SetSlot {
                         target: term_name,
                         slot: i + 1,
                         value: sub_name,
@@ -183,7 +184,7 @@ impl BodyBuilder {
         let ast::Equation { left, right } = equation;
         let left_name = self.term(global, left)?;
         let right_name = self.term(global, right)?;
-        self.instructions.push(Instruction::PushEquation {
+        self.instructions.push(RuleInstruction::PushEquation {
             left: left_name,
             right: right_name,
             description,
@@ -191,28 +192,31 @@ impl BodyBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<(Vec<Initializer>, Vec<Instruction>)> {
+    pub fn build(self) -> Result<(Vec<RuleInitializer>, Vec<RuleInstruction>)> {
         let arguments =
             self.arguments
                 .into_iter()
                 .enumerate()
                 .map(|(index, (_, slot))| match slot {
-                    ArgSlot::Left(slot) => Initializer::SlotFromLeft { index, slot },
-                    ArgSlot::Right(slot) => Initializer::SlotFromRight { index, slot },
+                    ArgSlot::Left(slot) => RuleInitializer::SlotFromLeft { index, slot },
+                    ArgSlot::Right(slot) => RuleInitializer::SlotFromRight { index, slot },
                 });
         let names = self
             .names
             .into_iter()
             .enumerate()
-            .map(|(index, _)| Initializer::Name { index });
+            .map(|(index, _)| RuleInitializer::Name { index });
         let terms = self
             .terms
             .into_iter()
             .enumerate()
-            .map(|(index, id)| Initializer::Agent { index, id });
+            .map(|(index, id)| RuleInitializer::Agent { index, id });
         let initailizers = arguments.chain(names).chain(terms).collect::<Vec<_>>();
+        let mut instructions = self.instructions;
+        instructions.push(RuleInstruction::FreeLeft);
+        instructions.push(RuleInstruction::FreeRight);
 
-        Ok((initailizers, self.instructions))
+        Ok((initailizers, instructions))
     }
 }
 
@@ -234,7 +238,7 @@ impl RulesBuilder {
             right: term2,
         } = term_pair.into_inner();
 
-        let mut body = BodyBuilder::default();
+        let mut body = RuleBuilder::default();
         let a1 = global.add_or_get_agent(&term1.agent, term1.body.len())?;
         let a2 = global.add_or_get_agent(&term2.agent, term2.body.len())?;
 
@@ -276,6 +280,98 @@ impl RulesBuilder {
 }
 
 #[derive(Default)]
+struct FunctionBuilder {
+    names: Vec<Name>,
+    terms: Vec<AgentId>,
+    instructions: Vec<NetInstruction>,
+}
+
+impl FunctionBuilder {
+    fn add_or_get_name(&mut self, name: &str) -> Local {
+        let id = match self
+            .names
+            .iter()
+            .enumerate()
+            .find_map(|(id, Name(n))| Some(id).filter(|_| *n == name))
+        {
+            Some(id) => id,
+            None => {
+                let id = self.names.len();
+                self.names.push(Name(name.to_string()));
+                id
+            }
+        };
+        Local::Name(id)
+    }
+
+    fn add_term(&mut self, agent_id: AgentId) -> Local {
+        let id = self.terms.len();
+        self.terms.push(agent_id);
+        Local::Agent(id)
+    }
+
+    pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
+        use ast::*;
+        match term {
+            Term::Name(name) => {
+                let term_name = self.add_or_get_name(name.as_name());
+                Ok(term_name)
+            }
+            Term::Agent(agent) => {
+                let Agent { name, body } = agent.into_inner();
+                let agent_id = global.add_or_get_agent(&name, body.len())?;
+                let term_name = self.add_term(agent_id);
+
+                for (i, term) in body.into_iter().enumerate() {
+                    let sub_name = self.term(global, term)?;
+                    self.instructions.push(NetInstruction::SetSlot {
+                        target: term_name,
+                        slot: i + 1,
+                        value: sub_name,
+                    })
+                }
+
+                Ok(term_name)
+            }
+        }
+    }
+
+    pub fn equation(
+        &mut self,
+        global: &mut GlobalBuilder,
+        equation: ast::Equation,
+    ) -> Result<&mut Self> {
+        let description = equation.to_string();
+        let ast::Equation { left, right } = equation;
+        let left_name = self.term(global, left)?;
+        let right_name = self.term(global, right)?;
+        self.instructions.push(NetInstruction::PushEquation {
+            left: left_name,
+            right: right_name,
+            description,
+        });
+        Ok(self)
+    }
+
+    pub fn build(self) -> Result<(Vec<NetInitializer>, Vec<NetInstruction>)> {
+        let names = self
+            .names
+            .into_iter()
+            .enumerate()
+            .map(|(index, _)| NetInitializer::Name { index });
+        let terms = self
+            .terms
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| NetInitializer::Agent { index, id });
+        let initailizers = names.chain(terms).collect::<Vec<_>>();
+        let instructions = self.instructions;
+
+        Ok((initailizers, instructions))
+    }
+}
+
+#[derive(Default)]
 struct FunctionsBuilder {
     functions: Vec<Function>,
     function_meta: Vec<FunctionMeta>,
@@ -300,7 +396,7 @@ impl FunctionsBuilder {
             self.entry_point(self.functions.len())?;
         }
 
-        let mut body = BodyBuilder::default();
+        let mut body = FunctionBuilder::default();
         let mut outputs = vec![];
         let output_count = function.interfaces.len();
         outputs.reserve(output_count);

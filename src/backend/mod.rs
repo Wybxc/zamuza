@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 pub mod builder;
+pub mod optimize;
 pub mod target;
 
 pub use builder::RuntimeBuilder;
@@ -41,7 +42,7 @@ impl Display for Local {
 /// Initializer
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
-pub enum Initializer {
+pub enum RuleInitializer {
     /// Name
     Name { index: usize },
     /// Agent
@@ -50,18 +51,47 @@ pub enum Initializer {
     SlotFromLeft { index: usize, slot: usize },
     /// Slot value from right argument
     SlotFromRight { index: usize, slot: usize },
+    /// Reuse agent from left argument
+    ReuseLeft { index: usize },
+    /// Reuse agent from right argument
+    ReuseRight { index: usize },
 }
 
-impl Display for Initializer {
+impl Display for RuleInitializer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Initializer::Name { index } => write!(f, "let x{} = new_name();", index),
-            Initializer::Agent { index, id } => write!(f, "let a{} = new_agent({});", index, id),
-            Initializer::SlotFromLeft { index, slot } => {
+            RuleInitializer::Name { index } => write!(f, "let x{} = new_name();", index),
+            RuleInitializer::Agent { index, id } => {
+                write!(f, "let a{} = new_agent({});", index, id)
+            }
+            RuleInitializer::SlotFromLeft { index, slot } => {
                 write!(f, "let s{} = left[{}];", index, slot)
             }
-            Initializer::SlotFromRight { index, slot } => {
+            RuleInitializer::SlotFromRight { index, slot } => {
                 write!(f, "let s{} = right[{}];", index, slot)
+            }
+            RuleInitializer::ReuseLeft { index } => write!(f, "let a{} = left;", index),
+            RuleInitializer::ReuseRight { index } => write!(f, "let a{} = right;", index),
+        }
+    }
+}
+
+/// Initializer
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub enum NetInitializer {
+    /// Name
+    Name { index: usize },
+    /// Agent
+    Agent { index: usize, id: AgentId },
+}
+
+impl Display for NetInitializer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NetInitializer::Name { index } => write!(f, "let x{} = new_name();", index),
+            NetInitializer::Agent { index, id } => {
+                write!(f, "let a{} = new_agent({});", index, id)
             }
         }
     }
@@ -70,14 +100,57 @@ impl Display for Initializer {
 /// Instruction
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
-pub enum Instruction {
-    /// target[slot] = value
+pub enum RuleInstruction {
+    /// `target[slot] = value;`
     SetSlot {
         target: Local,
         slot: usize,
         value: Local,
     },
-    /// push_equation(left, right);
+    /// `push_equation(left, right);`
+    PushEquation {
+        left: Local,
+        right: Local,
+        description: String,
+    },
+    /// `free(left);`
+    FreeLeft,
+    /// `free(right);`
+    FreeRight,
+}
+
+impl Display for RuleInstruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuleInstruction::SetSlot {
+                target,
+                slot,
+                value,
+            } => {
+                write!(f, "{}[{}] = {};", target, slot, value)
+            }
+            RuleInstruction::PushEquation {
+                left,
+                right,
+                description,
+            } => write!(f, "push_equation({}, {}); // {}", left, right, description),
+            RuleInstruction::FreeLeft => write!(f, "free(left);"),
+            RuleInstruction::FreeRight => write!(f, "free(right);"),
+        }
+    }
+}
+
+/// Instruction
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub enum NetInstruction {
+    /// `target[slot] = value;`
+    SetSlot {
+        target: Local,
+        slot: usize,
+        value: Local,
+    },
+    /// `push_equation(left, right);`
     PushEquation {
         left: Local,
         right: Local,
@@ -85,17 +158,17 @@ pub enum Instruction {
     },
 }
 
-impl Display for Instruction {
+impl Display for NetInstruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Instruction::SetSlot {
+            NetInstruction::SetSlot {
                 target,
                 slot,
                 value,
             } => {
                 write!(f, "{}[{}] = {};", target, slot, value)
             }
-            Instruction::PushEquation {
+            NetInstruction::PushEquation {
                 left,
                 right,
                 description,
@@ -135,8 +208,8 @@ impl AgentMeta {
 pub struct Rule {
     pub index: usize,
     pub description: String,
-    pub initializers: Vec<Initializer>,
-    pub instructions: Vec<Instruction>,
+    pub initializers: Vec<RuleInitializer>,
+    pub instructions: Vec<RuleInstruction>,
 }
 
 impl Display for Rule {
@@ -159,8 +232,8 @@ impl Display for Rule {
 #[derive(Clone, Debug)]
 pub struct Function {
     pub index: usize,
-    pub initializers: Vec<Initializer>,
-    pub instructions: Vec<Instruction>,
+    pub initializers: Vec<NetInitializer>,
+    pub instructions: Vec<NetInstruction>,
     pub outputs: Vec<Local>,
 }
 
