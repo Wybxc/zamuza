@@ -17,7 +17,7 @@ pub(crate) mod utils;
 
 use anyhow::Result;
 use options::Options;
-use runtime::target::{self, Target};
+use runtime::target::Target;
 use runtime::RuntimeBuilder;
 
 /// 编译器上下文
@@ -69,9 +69,10 @@ impl Context {
     }
 
     /// 运行。
+    #[cfg(feature = "tinycc")]
     pub fn run(self) -> Result<()> {
         let mut output = std::io::Cursor::new(Vec::new());
-        self.output_stream::<target::C>(&mut output)?;
+        self.output_stream::<runtime::target::C>(&mut output)?;
         let output = std::ffi::CString::new(output.into_inner())?;
 
         tinycc::Context::new(tinycc::OutputType::Memory)?

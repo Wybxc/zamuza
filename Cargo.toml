@@ -18,7 +18,11 @@ pest = "2.0"
 pest_derive = "2.0"
 colorized = "1.0"
 annotate-snippets = { version = "0.9", features = ["color"] }
-tinycc = { path = "tinycc" }
+tinycc = { path = "tinycc", optional = true }
+
+[features]
+tinycc = ["dep:tinycc"]
+default = ["tinycc"]
 
 [profile.release]
 lto = true

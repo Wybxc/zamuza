@@ -6,8 +6,11 @@ use std::path::Path;
 use thiserror::Error;
 
 mod c;
-mod exe;
 pub use c::C;
+
+#[cfg(feature = "tinycc")]
+mod exe;
+#[cfg(feature = "tinycc")]
 pub use exe::Exe;
 
 #[derive(Debug, Error)]
