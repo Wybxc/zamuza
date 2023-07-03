@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
 
-use crate::{ast, utils::Span};
+use crate::{frontend::ast, utils::Span};
 
 /// 类型检查错误。
 #[derive(Error, Debug)]

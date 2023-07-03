@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::io::Read;
-use zamuza::runtime::target;
+use zamuza::backend::target;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

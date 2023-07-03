@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::{options::Options, runtime::Program};
+use crate::{backend::Program, options::Options};
 
 use super::Target;
 

@@ -1,6 +1,6 @@
 //! 语法解析器。
 
-use crate::{ast, utils::Span};
+use crate::{frontend::ast, utils::Span};
 use annotate_snippets::{
     display_list::{DisplayList, FormatOptions},
     snippet::{Annotation, AnnotationType, Snippet},

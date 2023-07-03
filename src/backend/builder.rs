@@ -2,7 +2,7 @@
 
 use anyhow::{bail, Result};
 
-use crate::ast;
+use crate::frontend::ast;
 
 use super::{
     AgentId, AgentMeta, Function, FunctionMeta, Initializer, Instruction, Local, Program, Rule,

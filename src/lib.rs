@@ -8,17 +8,16 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
-pub mod ast;
-pub mod check;
+pub mod backend;
+pub mod frontend;
 pub mod options;
-pub mod parser;
-pub mod runtime;
 pub(crate) mod utils;
 
 use anyhow::Result;
+use backend::target::Target;
+use backend::RuntimeBuilder;
+use frontend::{check, parser};
 use options::Options;
-use runtime::target::Target;
-use runtime::RuntimeBuilder;
 
 /// 编译器上下文
 #[derive(Default)]
@@ -72,7 +71,7 @@ impl Context {
     #[cfg(feature = "tinycc")]
     pub fn run(self) -> Result<()> {
         let mut output = std::io::Cursor::new(Vec::new());
-        self.output_stream::<runtime::target::C>(&mut output)?;
+        self.output_stream::<backend::target::C>(&mut output)?;
         let output = std::ffi::CString::new(output.into_inner())?;
 
         tinycc::Context::new(tinycc::OutputType::Memory)?
