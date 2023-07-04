@@ -26,6 +26,7 @@ use std::{
     ffi::{c_char, c_int, c_void, CStr, CString},
     marker::PhantomData,
     path::Path,
+    ptr::NonNull,
     sync::atomic::{AtomicBool, Ordering},
 };
 use thiserror::Error;
@@ -79,7 +80,7 @@ pub struct Context {
 impl Context {
     /// create a new TCC compilation context
     pub fn new(output_type: OutputType) -> Result<Self, Error> {
-        if INITIALIZED.swap(true, Ordering::SeqCst) {
+        if INITIALIZED.swap(true, Ordering::Acquire) {
             return Err(Error::AlreadyInitialized);
         }
 
@@ -193,7 +194,7 @@ impl Context {
 
     /// add a symbol to the compiled program
     pub fn add_symbol(self, name: &CStr, val: Symbol) -> Self {
-        let ret = unsafe { bindings::tcc_add_symbol(self.inner, name.as_ptr(), val.inner) };
+        let ret = unsafe { bindings::tcc_add_symbol(self.inner, name.as_ptr(), val.as_ptr()) };
         assert_eq!(ret, 0);
         self
     }
@@ -296,7 +297,7 @@ impl Context {
 impl Drop for Context {
     fn drop(&mut self) {
         unsafe { bindings::tcc_delete(self.inner) };
-        INITIALIZED.store(false, Ordering::SeqCst);
+        INITIALIZED.store(false, Ordering::Relaxed);
     }
 }
 
@@ -310,21 +311,18 @@ impl RelocatedContext {
     /// get a pointer to a generated function
     pub fn get_symbol(&self, name: &CStr) -> Option<Symbol> {
         let addr = unsafe { bindings::tcc_get_symbol(self.inner, name.as_ptr()) };
-        if addr.is_null() {
-            None
-        } else {
-            Some(unsafe { Symbol::new(addr) })
-        }
+        let addr = NonNull::new(addr)?;
+        Some(unsafe { Symbol::new(addr) })
     }
 
     /// list all symbols
     pub fn list_symbols(&self) -> Vec<(&CStr, Symbol)> {
-        let mut symbols = Vec::new();
+        let mut symbols: Vec<(&CStr, Symbol)> = Vec::new();
 
         extern "C" fn symbol_callback(ctx: *mut c_void, name: *const c_char, val: *const c_void) {
             let ctx = ctx as *mut Vec<(&CStr, Symbol)>;
             let name = unsafe { CStr::from_ptr(name) };
-            unsafe { (*ctx).push((name, Symbol::new(val))) };
+            unsafe { (*ctx).push((name, Symbol::new(NonNull::new_unchecked(val as *mut _)))) };
         }
 
         unsafe {
@@ -341,7 +339,7 @@ impl RelocatedContext {
 
 /// a symbol
 pub struct Symbol<'a> {
-    inner: *const c_void,
+    inner: NonNull<c_void>,
     _marker: PhantomData<&'a Context>,
 }
 
@@ -350,7 +348,7 @@ impl<'a> Symbol<'a> {
     ///
     /// # Safety
     /// Pointer must be valid throughout the lifetime of the symbol.
-    pub unsafe fn new(val: *const c_void) -> Self {
+    pub unsafe fn new(val: NonNull<c_void>) -> Self {
         Self {
             inner: val,
             _marker: PhantomData,
@@ -359,19 +357,15 @@ impl<'a> Symbol<'a> {
 
     /// get a pointer to the symbol
     pub fn as_ptr(&self) -> *const c_void {
-        self.inner
+        self.inner.as_ptr()
     }
 
     /// cast the symbol to a function reference
     ///
     /// # Safety
     /// The type must be correct.
-    pub unsafe fn cast<T>(&self) -> Option<&'a T> {
-        if self.inner.is_null() {
-            None
-        } else {
-            Some(&*(self.inner as *const T))
-        }
+    pub unsafe fn cast<T>(&self) -> &'a T {
+        &*(self.as_ptr() as *const T)
     }
 }
 
