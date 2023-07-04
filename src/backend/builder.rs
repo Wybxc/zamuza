@@ -9,7 +9,7 @@ use super::{
     Rule, RuleInitializer, RuleInstruction,
 };
 
-struct Name(pub String);
+struct Name(pub(crate) String);
 
 enum ArgSlot {
     Left(usize),
@@ -80,7 +80,7 @@ impl Default for GlobalBuilder {
 }
 
 impl GlobalBuilder {
-    pub fn add_or_get_agent(&mut self, name: &str, arity: usize) -> Result<AgentId> {
+    pub(crate) fn add_or_get_agent(&mut self, name: &str, arity: usize) -> Result<AgentId> {
         match self
             .agents
             .iter()
@@ -99,7 +99,7 @@ impl GlobalBuilder {
         }
     }
 
-    pub fn build(self) -> Vec<AgentMeta> {
+    pub(crate) fn build(self) -> Vec<AgentMeta> {
         self.agents
     }
 }
@@ -113,7 +113,7 @@ struct RuleBuilder {
 }
 
 impl RuleBuilder {
-    pub fn slot(&mut self, name: String, slot: ArgSlot) -> &mut Self {
+    pub(crate) fn slot(&mut self, name: String, slot: ArgSlot) -> &mut Self {
         self.arguments.push((Name(name), slot));
         self
     }
@@ -149,7 +149,7 @@ impl RuleBuilder {
         Local::Agent(id)
     }
 
-    pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
+    pub(crate) fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
         use ast::*;
         match term {
             Term::Name(name) => {
@@ -175,7 +175,7 @@ impl RuleBuilder {
         }
     }
 
-    pub fn equation(
+    pub(crate) fn equation(
         &mut self,
         global: &mut GlobalBuilder,
         equation: ast::Equation,
@@ -192,7 +192,7 @@ impl RuleBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<(Vec<RuleInitializer>, Vec<RuleInstruction>)> {
+    pub(crate) fn build(self) -> Result<(Vec<RuleInitializer>, Vec<RuleInstruction>)> {
         let arguments =
             self.arguments
                 .into_iter()
@@ -227,7 +227,11 @@ struct RulesBuilder {
 }
 
 impl RulesBuilder {
-    pub fn rule(&mut self, global: &mut GlobalBuilder, rule: ast::Rule) -> Result<&mut Self> {
+    pub(crate) fn rule(
+        &mut self,
+        global: &mut GlobalBuilder,
+        rule: ast::Rule,
+    ) -> Result<&mut Self> {
         let description = rule.to_string();
         let ast::Rule {
             term_pair,
@@ -274,7 +278,7 @@ impl RulesBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> (Vec<Rule>, Vec<(AgentId, AgentId, usize)>) {
+    pub(crate) fn build(self) -> (Vec<Rule>, Vec<(AgentId, AgentId, usize)>) {
         (self.rules, self.rule_map)
     }
 }
@@ -310,7 +314,7 @@ impl FunctionBuilder {
         Local::Agent(id)
     }
 
-    pub fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
+    pub(crate) fn term(&mut self, global: &mut GlobalBuilder, term: ast::Term) -> Result<Local> {
         use ast::*;
         match term {
             Term::Name(name) => {
@@ -336,7 +340,7 @@ impl FunctionBuilder {
         }
     }
 
-    pub fn equation(
+    pub(crate) fn equation(
         &mut self,
         global: &mut GlobalBuilder,
         equation: ast::Equation,
@@ -353,7 +357,7 @@ impl FunctionBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<(Vec<NetInitializer>, Vec<NetInstruction>)> {
+    pub(crate) fn build(self) -> Result<(Vec<NetInitializer>, Vec<NetInstruction>)> {
         let names = self
             .names
             .into_iter()
@@ -387,7 +391,7 @@ impl FunctionsBuilder {
         Ok(())
     }
 
-    pub fn function(
+    pub(crate) fn function(
         &mut self,
         global: &mut GlobalBuilder,
         function: ast::Net,
@@ -424,7 +428,7 @@ impl FunctionsBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<(Vec<Function>, Vec<FunctionMeta>, usize)> {
+    pub(crate) fn build(self) -> Result<(Vec<Function>, Vec<FunctionMeta>, usize)> {
         if let Some(entry_point) = self.entry_point {
             Ok((self.functions, self.function_meta, entry_point))
         } else {

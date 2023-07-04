@@ -9,9 +9,11 @@ use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 
 mod grammar {
+    use pest_derive::Parser;
+
     #[derive(Parser)]
     #[grammar = "zamuza.pest"]
-    pub struct ZamuzaParser;
+    pub(crate) struct ZamuzaParser;
 }
 
 use grammar::{Rule, ZamuzaParser};
