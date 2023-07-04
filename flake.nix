@@ -22,7 +22,7 @@
         fenixPkgs = fenix.packages.${system};
         pkgs = nixpkgs.legacyPackages.${system};
 
-        toolchain = fenixPkgs.minimal.toolchain;
+        toolchain = fenixPkgs.stable.toolchain;
         rustPlatform = pkgs.makeRustPlatform {
           cargo = toolchain;
           rustc = toolchain;
@@ -69,7 +69,7 @@
               pkgs.installShellFiles
             ];
 
-            buildInputs = buildInputs;
+            inherit buildInputs;
           };
 
         checks.default = packages.default;
@@ -89,7 +89,7 @@
             pest-ide-tools
           ] ++ optionals (!pkgs.stdenv.isDarwin) [ pkgs.gdb ];
 
-          buildInputs = buildInputs;
+          inherit buildInputs;
 
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
         };
